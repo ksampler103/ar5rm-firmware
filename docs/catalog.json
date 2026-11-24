@@ -11,6 +11,15 @@
   ],
   "apps": [
     {
+      "id": "actlog",
+      "name": "ACTLOG",
+      "file": "apps/actlog.app",
+      "size": 10188,
+      "sha256": "45ea08934ebe353d81cb01ae2f72cc646fad92acf3e8bc45518528512b25cafb",
+      "segments": 1,
+      "notes": "Activity logger: scans programmed channels, logs squelch hits (persistent)."
+    },
+    {
       "id": "chanmgr",
       "name": "CHANMGR",
       "file": "apps/chanmgr.app",
@@ -27,6 +36,24 @@
       "sha256": "54913aec9fdd575d5bd88faeb5b24581bb57cf02054f1b3d3955afd4d622c2e3",
       "segments": 1,
       "notes": "FM broadcast radio."
+    },
+    {
+      "id": "foxhunt",
+      "name": "FOXHUNT",
+      "file": "apps/foxhunt.app",
+      "size": 4764,
+      "sha256": "cc75095c292b8ce7d9925820b4fd0e969d0e8f705fcf766835ea3cb37ae78d0b",
+      "segments": 1,
+      "notes": "Direction-finding helper: big RSSI readout, peak hold, bearing samples."
+    },
+    {
+      "id": "rptbook",
+      "name": "RPTBOOK",
+      "file": "apps/rptbook.app",
+      "size": 10268,
+      "sha256": "a058997f5b01d12ed81aff9ae13bab8797b547f99d488fd9c0f9e196ed5884d8",
+      "segments": 1,
+      "notes": "Repeater book: Preston's programmed channels as a tuneable directory (accepts injected ZIP data)."
     },
     {
       "id": "satellite",
@@ -72,6 +99,15 @@
       "sha256": "ff8d85aa9f9fb36512925f59ba4a62e265723928f1a6e1031c66c9d0ea0d9063",
       "segments": 1,
       "notes": "Spectrum sweep display."
+    },
+    {
+      "id": "wxpanel",
+      "name": "WXPANEL",
+      "file": "apps/wxpanel.app",
+      "size": 5740,
+      "sha256": "70f52eb5c0a4d82596d94fc204f2b209bf4730cdd7aa10a7668b994aeb90eb96",
+      "segments": 1,
+      "notes": "NOAA weather panel: 7 WX channels with per-channel RSSI + auto-strongest."
     }
   ]
 }
