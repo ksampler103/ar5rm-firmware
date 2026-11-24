@@ -48,6 +48,105 @@ Build notes:
   run when packing from crate dirs and were not repeated — the packages
   came straight out of `mkapp.py` in the same tree.
 
+## Custom apps (ours, 2026-11-24)
+
+Sources live in `custom-apps/<name>/` (standalone cargo projects in the
+upstream app skeleton; built on clt-build-01 from a scratch copy inside
+the upstream tree so the `../../abi` path dep resolves — upstream sources
+were not modified). All four carry build hash `0xDEC616E9` and PASS
+`check_app.py`.
+
+| File | App name | Segments | Size | SHA-256 | check_app verdict |
+|---|---|---|---|---|---|
+| `apps/actlog.app` | ACTLOG | 1 (image 10,080 B, oversized) | 10,188 B | `45ea08934ebe353d81cb01ae2f72cc646fad92acf3e8bc45518528512b25cafb` | PASS — stack budget +3,092 B margin |
+| `apps/rptbook.app` | RPTBOOK | 1 (image 10,160 B, oversized) | 10,268 B | `a058997f5b01d12ed81aff9ae13bab8797b547f99d488fd9c0f9e196ed5884d8` | PASS — stack budget +2,996 B margin |
+| `apps/foxhunt.app` | FOXHUNT | 1 (image 4,656 B) | 4,764 B | `cc75095c292b8ce7d9925820b4fd0e969d0e8f705fcf766835ea3cb37ae78d0b` | PASS — all checks OK |
+| `apps/wxpanel.app` | WXPANEL | 1 (image 5,632 B) | 5,740 B | `70f52eb5c0a4d82596d94fc204f2b209bf4730cdd7aa10a7668b994aeb90eb96` | PASS — all checks OK |
+
+ACTLOG and RPTBOOK are *oversized* segments (image > ARENA_SIZE 8,192 B,
+within ARENA_MAX 12,288 B) — the same mechanism upstream's satellite
+predict segment uses; their `app.x` declares LENGTH = 12288.
+
+### ACTLOG — activity logger
+
+Scans the radio's programmed channels (ABI `chan_read`, deduped by
+frequency; fallback fixed list of NOAA WX + GMRS outputs + 146.520 /
+446.000 when no channels exist) at ~90 ms worst-case dwell, tone-agnostic
+carrier detect, speaker muted while running. A hit = squelch open
+≥ 200 ms, closed by 300 ms of silence; records frequency, start time,
+peak RSSI, duration.
+
+**Persistence: YES — survives app exit and power cycles.** ABI evidence:
+the firmware fences `nor_write`/`nor_erase_sector` to addresses
+≥ `OVERLAY_APP_ADDR` (0x14C000) and `flash_map.rs` designates everything
+past the slots (`OVERLAY_DATA_ADDR` 0x18C000) as app-private data —
+the satellite app already persists this way. ACTLOG's region is
+0x191000..0x195000 (clear of satellite's 0x18C000..0x191000): header
+sector at 0x191000 (magic `ALOG`, version), then an append-only log of
+16-byte records across 3 sectors — **768 hits max**. The end of the log
+is the first all-0xFF record, so appends never need an erase. Review
+view (MENU) shows the newest 48 hits; `*` + MENU clears (the only erase
+path besides first-run init). Times are UTC when the radio clock has
+been set (`utc_get`), otherwise hits show duration/peak only. Known
+limits: dwell means very short transmissions can be missed; the clock
+is unset after power-on until something sets it, so timestamps depend
+on that.
+
+### RPTBOOK — repeater book (with injected-data contract)
+
+Directory of **Preston's real parsed channels: 165 entries** generated
+by `custom-apps/rptbook/gen_baked.py` from his pre-flash backup
+(`factory_memory.img`, bf-5rh `flash_map::Channel` layout: BCD deci-Hz
+frequencies, 12-byte names, firmware subaudio tone codes) into
+`src/baked.rs`. Read-only — the app never writes channel data. MENU
+tunes the entry in-app (exact RX/TX/tones); `#` shows a detail view;
+on EXIT after a tune, `save_master_vfo` lands the standby VFO on the
+entry's RX frequency (with the TX tone if any — the standby VFO applies
+its own offset rules after exit; the in-app tune is the exact one).
+
+**Injected data block (ZIP-code flow, Preston's design amendment):**
+the app supports a data block patched into its flash slot at install
+time, so a future page flow can do ZIP → nearby repeaters → compose
+slot image → existing install, with **no app rebuild per location**.
+
+- *Mechanism:* real slot read via the ABI — `nor_read` has **no lower
+  bound** in the firmware (only writes are fenced), so at startup the
+  app scans the 8 slot headers (base 0x14C000, stride 0x8000) for the
+  package named `RPTBOOK` and reads the block at `slot_base + 0x6000`.
+  No file patching of the .app binary is needed.
+- *Offset:* **0x6000** (24,576) from the slot base. The package
+  (10,268 B) must stay below 0x6000 for the contract to hold.
+- *Format:* 16-byte header — magic `RPBK`, u8 version = 1, u8 reserved,
+  u16 record count, u16 **CRC-16/XMODEM** (poly 0x1021, init 0) over
+  the record bytes, 6 bytes reserved — then fixed **30-byte records**:
+  name 16 B ASCII (space/NUL padded), rx_hz u32 LE, tx_hz u32 LE
+  (0 = same as rx), tx_tone u16, rx_tone u16 (both in the firmware's
+  own subaudio encoding: 0 = none, 1–105 = DCS normal table index,
+  106–250 = DCS inverted, >250 = CTCSS tenths of Hz), flags u8
+  (bit0 duplex, bit1 tx tone set, bit2 rx tone set, bit3 RX-only),
+  1 byte reserved.
+- *Capacity:* (32,768 − 24,576 − 16) / 30 = **272 records max**.
+- The app validates magic, version, count range, and CRC; any failure
+  → the baked table is used. Full contract also documented in the
+  header comment of `custom-apps/rptbook/src/main.rs`.
+
+### FOXHUNT — direction-finding helper
+
+Live RSSI on the master frequency: numeric dBm (firmware conversion,
+raw − 170), bar graph with decaying peak-hold marker, guidance line
+(STRONG/WARM/WEAK + body-block/attenuation prompts), MENU snapshots a
+bearing sample (up to 8, timestamped when the clock is set), `#`
+toggles a beeper whose rate follows RSSI (tone_on is in the ABI, so
+the beeper is real, ~120 ms–1.5 s interval over −45…−128 dBm),
+`*` clears samples/peak, UP/DOWN step ±12.5 kHz.
+
+### WXPANEL — NOAA panel
+
+The 7 WX channels (162.400–162.550) in a list with per-channel RSSI;
+on entry it samples all 7 (3 reads each after a 60 ms settle) and
+auto-tunes the strongest, then keeps a live RSSI readout on the tuned
+channel. UP/DOWN + MENU tune manually, `*` re-runs the auto-scan.
+
 ## Commit decision
 
 The four `.app` files **are committed** in this directory (`apps/`). They
