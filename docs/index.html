@@ -498,29 +498,56 @@ function updateGates(){
 /* ---------- Step 0: connect / disconnect ---------- */
 var serialSupported=("serial" in navigator);
 async function doConnect(){
+  var opened=false;
   try{
     logMsg("Requesting serial port — pick the programming cable in the browser dialog…");
     S.port=await navigator.serial.requestPort();
+    if(!S.port) throw new Error("The browser returned no port.");
     await S.port.open({baudRate:115200, dataBits:8, parity:"none", stopBits:1, flowControl:"none"});
+    opened=true;
     S.writer=S.port.writable.getWriter();
     S.reader=S.port.readable.getReader();
     S.connected=true;
     readLoop();
-    var info=(S.port.getInfo)?S.port.getInfo():{};
-    var desc="Connected at 115200 8N1, flow control off.";
-    if(info && (info.usbVendorId!==undefined)){
-      desc+=" USB vendor 0x"+info.usbVendorId.toString(16).padStart(4,"0")+
-            " / product 0x"+info.productId.toString(16).padStart(4,"0")+".";
-    }
+    /* SerialPortInfo uses usbVendorId / usbProductId. Read each field
+       defensively: a missing field must never fail an otherwise good
+       connection (the old code read info.productId, which is always
+       undefined, threw, and left the UI stuck on "No port selected."). */
+    var info={};
+    try{ info=(S.port.getInfo)?(S.port.getInfo()||{}):{}; }catch(ie){ info={}; }
+    var desc="Connected — port selected and open at 115200 8N1, flow control off.";
+    var usbBits=[];
+    if(typeof info.usbVendorId==="number") usbBits.push("vendor 0x"+info.usbVendorId.toString(16).padStart(4,"0"));
+    if(typeof info.usbProductId==="number") usbBits.push("product 0x"+info.usbProductId.toString(16).padStart(4,"0"));
+    if(usbBits.length) desc+=" USB "+usbBits.join(" / ")+".";
     $("connInfo").textContent=desc;
     $("connInfo").className="statusline ok";
     setPill($("connPill"),"connected","ok");
     logMsg("Port open: 115200 baud, 8 data bits, no parity, 1 stop bit, no flow control. Nothing sent yet.","ok");
     refreshControls();
   }catch(e){
-    if(e && e.name==="NotFoundError"){ logMsg("Port selection cancelled — nothing connected.","warn"); }
-    else { logMsg("Connect failed: "+(e.message||e),"err"); }
-    S.port=null; S.connected=false; refreshControls();
+    var msg=(e && e.message)?e.message:String(e);
+    /* If the port was opened before the failure, close it properly —
+       dropping the reference while it stays open makes every later
+       Connect attempt fail too. */
+    if(opened || S.reader || S.writer){
+      try{ if(S.reader){ await S.reader.cancel(); S.reader.releaseLock(); } }catch(ce){}
+      try{ if(S.writer){ S.writer.releaseLock(); } }catch(ce){}
+      try{ if(S.port){ await S.port.close(); } }catch(ce){}
+    }
+    S.reader=null; S.writer=null; S.port=null; S.connected=false;
+    if(e && e.name==="NotFoundError"){
+      logMsg("Port selection cancelled — nothing connected.","warn");
+      $("connInfo").textContent="No port selected — the picker was closed without a selection taking effect. Click Connect, pick the cable's port, then click Connect in the picker dialog.";
+      $("connInfo").className="statusline";
+      setPill($("connPill"),"not connected","");
+    }else{
+      logMsg("Connect failed: "+msg,"err");
+      $("connInfo").textContent="Connect failed: "+msg+" — No port is connected. If another program (CHIRP, a terminal, another browser tab) has the cable open, close it, then click Connect and try again.";
+      $("connInfo").className="statusline fail";
+      setPill($("connPill"),"connect failed","fail");
+    }
+    refreshControls();
   }
 }
 async function doDisconnect(){
