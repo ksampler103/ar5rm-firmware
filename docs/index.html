@@ -2074,7 +2074,8 @@ var APP_ICONS={
   rptbook:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14.5H6.7A1.7 1.7 0 0 0 5 20z"/><path d="M5 18.7A1.7 1.7 0 0 1 6.7 17H19"/><circle cx="15.5" cy="9" r="0.9" fill="currentColor" stroke="none"/><path d="M13.3 11.2a3.2 3.2 0 0 1 4.4 0"/></svg>',
   foxhunt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="0.8" fill="currentColor" stroke="none"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/></svg>',
   wxpanel:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7" r="2.4"/><path d="M7.5 2.4v1.2M2.9 7h1.2M4.3 3.8l0.9 0.9"/><path d="M9.5 20.5h7.7a3.6 3.6 0 0 0 0.7-7.1A5.2 5.2 0 0 0 7.9 14.6a3.1 3.1 0 0 0 1.6 5.9z"/></svg>',
-  themes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="9.3" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="8.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.2" cy="13.6" r="1.1" fill="currentColor" stroke="none"/><path d="M12 20.5a2.3 2.3 0 0 1-2.3-2.3c0-1 .8-1.7 1.8-2.1.9-.4 1.5-1 1.5-2.1"/></svg>'
+  themes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="9.3" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="8.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.2" cy="13.6" r="1.1" fill="currentColor" stroke="none"/><path d="M12 20.5a2.3 2.3 0 0 1-2.3-2.3c0-1 .8-1.7 1.8-2.1.9-.4 1.5-1 1.5-2.1"/></svg>',
+  timesync:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg>'
 };
 function appIconSvg(name){ return APP_ICONS[name]||APP_ICONS.generic; }
 function buildAppTiles(apps){
@@ -2208,6 +2209,13 @@ function satToolsHtml(){
     "<div class='statusline' id='satFillStatus'>Current location uses your browser/device location; ZIP and address lookups run only when you click them.</div>"+
     "<div class='row'><button class='primary' id='btnSatSavePos'>Save position</button></div>"+
     "<div class='statusline' id='satPosStatus'>Save reads the settings record fresh, changes only bytes 32–39, writes it back, and verifies by read-back.</div>"+
+    "<p style='margin-top:10px'>SATELLITE needs three things from this page: its <strong>satellite table</strong> (above), your <strong>observer position</strong> (here), and the <strong>radio clock</strong> (below).</p>"+
+    "<h4 style='margin-top:16px'>Radio clock</h4>"+
+    "<p>The radio's UTC clock lives in RAM only — it is lost every time the radio powers off, and the CPS protocol has no clock command, so the page cannot set it directly. Instead, this writes the current time into the TIMESYNC app's data block; opening TIMESYNC on the radio once applies it. The clock is the third thing SATELLITE needs: without it, pass predictions are computed for the wrong time.</p>"+
+    "<div class='row'><span>This computer's current UTC: <strong id='satClockNow'>—</strong></span></div>"+
+    "<div class='row'><button class='primary' id='btnSatClockSync'>Sync radio clock</button></div>"+
+    "<p>Then open TIMESYNC on the radio once — it sets the clock and shows the time it used. Open it promptly: the clock is set from the moment you clicked, and the radio forgets the time when it powers off.</p>"+
+    "<div class='statusline' id='satClockStatus'>Sync installs the TIMESYNC app first if it is missing or out of date, then writes the timestamp block at its slot and verifies it by read-back.</div>"+
   "</div>";
 }
 function rptFileStatusText(){
@@ -2252,6 +2260,8 @@ function attachAppToolListeners(entry){
     var bg=$("btnSatGeo"); if(bg) bg.addEventListener("click", doSatGeo);
     var bz=$("btnSatZip"); if(bz) bz.addEventListener("click", doSatZip);
     var ba=$("btnSatAddr"); if(ba) ba.addEventListener("click", doSatAddr);
+    var bc=$("btnSatClockSync"); if(bc) bc.addEventListener("click", doSatClockSync);
+    updateSatClockNow();
     var zi=$("satZip"); if(zi) zi.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); doSatZip(); } });
     var ai=$("satAddr"); if(ai) ai.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); doSatAddr(); } });
   }
@@ -3018,6 +3028,132 @@ async function writeRptbookDataBlock(slot, app, paddedApp, st){
     return sourceDesc;
   }
   throw new Error("RPTBOOK data verification FAILED: first mismatching offset "+mismatch+" at slot+0x6000 (expected 0x"+padded[mismatch].toString(16).padStart(2,"0")+", read 0x"+rb[mismatch].toString(16).padStart(2,"0")+").");
+}
+
+/* ----- TIMESYNC: radio-clock sync via an injected TSYN block -----
+   The CPS protocol has no clock command and the settings record has
+   no time field (see CPS-SPEC.md), so the clock is delivered the
+   RPTBOOK way: a small data block written into the TIMESYNC app's
+   own slot at offset 0x6000. The app validates it (magic "TSYN",
+   version 1, CRC-16/XMODEM over the payload) and applies it via the
+   ABI's utc_set when the operator opens TIMESYNC once. Block layout
+   mirrors RPBK: a 16-byte header + an 8-byte payload (utc_secs
+   u32 LE = seconds since 2000-01-01T00:00:00Z, written_unix u32 LE).
+   Byte-identical to tools/simulator/tools/make_tsyn.py.
+   Protocol reality (CPS-SPEC §7.3): APP_WRITE requires a preceding
+   APP_ERASE in the same session — the erased slot is the write
+   target — so every sync runs erase -> install app -> verify ->
+   write block -> verify in one session, exactly like a fresh
+   RPTBOOK install. The slot scan decides WHICH slot (TIMESYNC's own
+   slot is reused; otherwise the first empty slot). */
+function buildTsynBlock(unixSecs){
+  var utc=(unixSecs-946684800)>>>0;
+  var payload=new Uint8Array(8);
+  var dv=new DataView(payload.buffer);
+  dv.setUint32(0, utc, true);
+  dv.setUint32(4, unixSecs>>>0, true);
+  var crc=crc16Xmodem(payload);
+  var block=new Uint8Array(24);
+  block[0]=0x54; block[1]=0x53; block[2]=0x59; block[3]=0x4E; /* "TSYN" */
+  block[4]=1; block[5]=0;
+  block[6]=8; block[7]=0; /* payload length, u16 LE */
+  block[8]=crc&0xFF; block[9]=(crc>>8)&0xFF;
+  block.set(payload,16);
+  return block;
+}
+function fmtUtcStamp(unixSecs){
+  var d=new Date(unixSecs*1000);
+  function p2(n){ return String(n).padStart(2,"0"); }
+  return d.getUTCFullYear()+"-"+p2(d.getUTCMonth()+1)+"-"+p2(d.getUTCDate())+" "+p2(d.getUTCHours())+":"+p2(d.getUTCMinutes())+":"+p2(d.getUTCSeconds())+" UTC";
+}
+function updateSatClockNow(){
+  var el=$("satClockNow"); if(!el) return;
+  el.textContent=fmtUtcStamp(Math.floor(Date.now()/1000));
+}
+setInterval(updateSatClockNow, 250);
+async function scanSlotHeaders(){
+  var slots=[];
+  for(var s=0;s<8;s++){
+    var hdr=await readFlashRawBytes(CPS_SLOT_BASE_WIRE + s*0x200, 128);
+    var allFF=true; for(var k=0;k<108;k++){ if(hdr[k]!==0xFF){ allFF=false; break; } }
+    if(allFF){ slots.push({state:"empty", name:"", segCount:0}); continue; }
+    var magic=decodeAsciiTrim(hdr.slice(0,4));
+    var hash=u32le(hdr,4);
+    if(magic==="OVL1" && hash===EXPECTED_BUILD_HASH) slots.push({state:"ok", name:decodeAsciiTrim(hdr.slice(12,28)), segCount:hdr[8]});
+    else slots.push({state:"unknown", name:"", segCount:0});
+  }
+  return slots;
+}
+async function fetchTimesyncPackage(){
+  var entry=catalogEntry(catalog?catalog.apps:null, "timesync");
+  if(!entry && catalog && catalog.apps){
+    for(var i=0;i<catalog.apps.length;i++){ if((catalog.apps[i].name||"").toUpperCase()==="TIMESYNC"){ entry=catalog.apps[i]; break; } }
+  }
+  if(!entry) throw new Error("TIMESYNC is not in the built-in catalog — reload the page so the catalog refreshes, or install timesync.app manually from the Apps hub first.");
+  var resp=await fetch(entry.file);
+  if(!resp.ok) throw new Error("Could not fetch "+entry.file+" (HTTP "+resp.status+"). Nothing was written.");
+  var buf=new Uint8Array(await resp.arrayBuffer());
+  var sha=await sha256Hex(buf);
+  if(sha.toLowerCase()!==String(entry.sha256).toLowerCase()) throw new Error("SHA-256 mismatch for "+entry.file+" — manifest "+entry.sha256+", downloaded "+sha+". NOT installing.");
+  if(decodeAsciiTrim(buf.slice(0,4))!=="OVL1" || u32le(buf,4)!==EXPECTED_BUILD_HASH) throw new Error("The catalog TIMESYNC package failed header validation (magic / build hash). NOT installing.");
+  return {bytes:buf, appName:decodeAsciiTrim(buf.slice(12,28))};
+}
+async function installAppToSlot(slot, bytes, st){
+  var paddedLen=Math.ceil(bytes.length/512)*512;
+  var padded=new Uint8Array(paddedLen); padded.fill(0xFF); padded.set(bytes,0);
+  try{ await cpsTransact(CPS_CMD.APP_ERASE, slot, new Uint8Array(0)); }
+  catch(e){
+    if(e.cpsCode===0x02) throw new Error("APP_ERASE failed with bad address (0x02). Abort — re-run the whole sync (the session/slot state may have been lost).");
+    throw e;
+  }
+  await writeAppChunks(slot, padded, null);
+  var rb=await readFlashRawBytes(CPS_SLOT_BASE_WIRE + slot*0x200, paddedLen);
+  for(var k=0;k<paddedLen;k++){ if(rb[k]!==padded[k]) throw new Error("TIMESYNC install failed verification at offset "+k+". Do not trust this slot — re-run the sync."); }
+  return padded;
+}
+async function writeTsynDataBlock(slot, block, st){
+  var dataWire=CPS_SLOT_BASE_WIRE + slot*0x200 + 0x180; /* (0x14C000 + slot*0x8000 + 0x6000) / 64 */
+  var padded=new Uint8Array(512); padded.fill(0xFF); padded.set(block,0);
+  try{ await cpsTransact(CPS_CMD.APP_WRITE, 0x6000, padded); }
+  catch(e){
+    if(e.cpsCode===0x02) throw new Error("TIMESYNC data APP_WRITE failed with bad address (0x02) at slot offset 0x6000. Abort — re-run the whole sync.");
+    throw e;
+  }
+  if(st) st.textContent="TIMESYNC: verifying the timestamp block by read-back…";
+  var rb=await readFlashRawBytes(dataWire, 512);
+  for(var k=0;k<512;k++){ if(rb[k]!==padded[k]) throw new Error("TIMESYNC data verification FAILED: first mismatching offset "+k+" at slot+0x6000 (expected 0x"+padded[k].toString(16).padStart(2,"0")+", read 0x"+rb[k].toString(16).padStart(2,"0")+")."); }
+  logMsg("TIMESYNC data SUCCESS: timestamp block verified — read-back matches (512 bytes at slot "+slot+" offset 0x6000).","ok");
+}
+async function doSatClockSync(){
+  var st=$("satClockStatus");
+  /* The timestamp is the click moment, captured before any awaits:
+     the radio clock will be set to this time when TIMESYNC opens. */
+  var unixSecs=Math.floor(Date.now()/1000);
+  var block=buildTsynBlock(unixSecs);
+  setRunning("satClockSync");
+  if(st){ st.className="statusline run"; st.textContent="Syncing radio clock — preparing "+fmtUtcStamp(unixSecs)+"…"; }
+  try{
+    var pkg=await fetchTimesyncPackage();
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    await ensureCpsSession();
+    if(st) st.textContent="Syncing radio clock: scanning the app slots for TIMESYNC…";
+    var slots=await scanSlotHeaders();
+    var slot=-1, reused=false;
+    for(var s=0;s<8;s++){ if(slots[s].state==="ok" && slots[s].name.toUpperCase()==="TIMESYNC"){ slot=s; reused=true; break; } }
+    if(slot===-1){ for(var s2=0;s2<8;s2++){ if(slots[s2].state==="empty"){ slot=s2; break; } } }
+    if(slot===-1) throw new Error("No slot available for TIMESYNC: no slot holds TIMESYNC and none is empty. Free a slot in the Apps hub, then re-run the sync.");
+    logMsg("TIMESYNC sync: "+(reused?("reusing TIMESYNC's slot "+slot):("installing TIMESYNC into empty slot "+slot))+" — erase + install + timestamp block in one session (APP_WRITE needs the same-session erase, CPS-SPEC §7.3).");
+    if(st) st.textContent="Syncing radio clock: installing TIMESYNC into slot "+slot+" (erase first)…";
+    await installAppToSlot(slot, pkg.bytes, st);
+    logMsg("TIMESYNC sync: app installed and verified in slot "+slot+". Writing the timestamp block…","ok");
+    if(st) st.textContent="Syncing radio clock: writing the timestamp block…";
+    await writeTsynDataBlock(slot, block, st);
+    if(st){ st.textContent="Clock sync written and verified for "+fmtUtcStamp(unixSecs)+". Now open TIMESYNC on the radio once to set the clock — promptly, while that time is still close."; st.className="statusline ok"; }
+    logMsg("TIMESYNC sync SUCCESS: TIMESYNC in slot "+slot+", timestamp block verified ("+fmtUtcStamp(unixSecs)+"). Awaiting the operator opening TIMESYNC on the radio.","ok");
+  }catch(e){
+    if(st){ st.textContent="Clock sync failed: "+e.message; st.className="statusline fail"; }
+    logMsg("TIMESYNC clock sync failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
 }
 
 async function loadCatalog(){
