@@ -20,7 +20,7 @@ are impossible and out of scope). Preston knows this; it is a project for its ow
 | Unit | Hold-8 screen | Role |
 |---|---|---|
 | 1 "BK" | `5rhbk ver v0.14 bf` | His user (the Nov 15 NXDN ear-test radio). Stock and unflashed — the reference radio. Case opened once by accident (Nov 24, 2026; the NRF was the intended teardown target): dropped, keypad flex latch broken, flex shimmed with paper+tape, working. |
-| 2 "NRF" | `5RHNRF / Ver v0.14 / bf` | Spare. Designated dev unit. Opened Nov 24, 2026: board is **5RH10W-V05** (silkscreen date 23.10.12) — a different board code from the BK's 5RB10W-V02 and further from amoxu's documented V01. RF/LCD details unverified. |
+| 2 "NRF" | `5RHNRF / Ver v0.14 / bf` | Spare. Designated dev unit. Opened Nov 24, 2026: board is **5RH10W-V05** (silkscreen date 23.10.12) — a different board code from the BK's 5RB10W-V02 and further from amoxu's documented V01. RF chip unverified; LCD flex T-2287-A / S-6883-A (14 contacts) shares its 6883 code with the BK's module — panel possibly common to both boards. |
 
 ## Hardware (teardown 2026-11-24 of the BK unit — see `teardown/TEARDOWN-2026-11-24.md` + photos; the NRF dev unit's board is 5RH10W-V05, details unverified)
 - PCB **5RB10W-V02** (purple; shield-can lands, no cans fitted) — same family as the
