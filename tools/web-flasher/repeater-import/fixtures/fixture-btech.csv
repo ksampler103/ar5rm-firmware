@@ -1,0 +1,4 @@
+title,tx_freq,rx_freq,tx_sub_audio(CTCSS=freq/DCS=number),rx_sub_audio(CTCSS=freq/DCS=number),tx_power(H/M/L),bandwidth(12500/25000),scan(0=OFF/1=ON),talk around(0=OFF/1=ON),pre_de_emph_bypass(0=OFF/1=ON),sign(0=OFF/1=ON),tx_dis(0=OFF/1=ON),mute(0=OFF/1=ON),rx_modulation(0=FM/1=AM),tx_modulation(0=FM/1=AM)
+GASTONIA,146340000,146940000,14130,0,H,25000,1,0,0,1,0,0,0,0
+KINGS MTN,448862500,443862500,DCS 023N,DCS 023N,H,25000,1,0,0,1,0,0,0,0
+SIMPLEX,146520000,146520000,0,0,H,25000,1,0,0,1,0,0,0,0

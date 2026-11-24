@@ -1,0 +1,7 @@
+Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode,TStep,Skip,Power,Comment
+0,GASTONIA 94,146.940000,-,0.600000,Tone,141.3,141.3,023,NN,023,Unknown,FM,5.00,,5.0W,"Gastonia, NC"
+1,KINGS MTN,443.862500,+,5.000000,TSQL,100.0,100.0,023,NN,023,Unknown,FM,5.00,,5.0W,Kings Mountain
+2,BELMONT DCS,145.350000,-,0.600000,DTCS,88.5,88.5,205,NN,205,Unknown,FM,5.00,,5.0W,Belmont
+3,SIMPLEX 52,146.520000,off,0.000000,,88.5,88.5,023,NN,023,Unknown,FM,5.00,,5.0W,Simplex
+4,CHERRYVILLE,224.660000,-,1.600000,Tone,100.0,100.0,023,NN,023,Unknown,FM,5.00,,5.0W,Cherryville
+5,BAD FREQ,0.000000,-,0.600000,Tone,141.3,141.3,023,NN,023,Unknown,FM,5.00,,5.0W,Broken row

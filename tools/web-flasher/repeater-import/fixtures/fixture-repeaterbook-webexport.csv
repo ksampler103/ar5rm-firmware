@@ -1,0 +1,6 @@
+Channel Number,Receive Frequency,Transmit Frequency,Offset Direction,Name,Tone Mode,CTCSS,RX CTCSS,DCS,RX DCS,Comment
+1,146.940000,146.340000,-,W4WBT,Tone,141.3,,,,Gastonia
+2,443.862500,448.862500,+,K4GFD,T SQL,100.0,100.0,,,Dallas
+3,462.562500,467.562500,+,GMRS 15,None,,,,,Gastonia GMRS
+4,145.350000,144.750000,-,W4BFB,DCS,,,023,023,Belmont
+5,not-a-freq,146.340000,-,BADROW,Tone,141.3,,,,Broken row

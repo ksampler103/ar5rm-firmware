@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RepeaterBook" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="35.26210" lon="-81.17830">
+    <name>W4WBT 146.9400 -</name>
+    <desc>Gastonia, NC - PL 141.3</desc>
+  </wpt>
+  <wpt lat="35.24560" lon="-81.34190">
+    <name>K4KMT 443.8625 +</name>
+    <desc>Kings Mountain, NC - PL 100.0</desc>
+  </wpt>
+  <wpt lat="35.31890" lon="-81.24110">
+    <name>W4DCS 145.3500 - DCS 023</name>
+    <desc>Dallas, NC</desc>
+  </wpt>
+</gpx>
