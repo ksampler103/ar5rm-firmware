@@ -150,6 +150,19 @@
   .appdetail p strong{color:var(--text)}
   .appshots{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
   .appshots img{width:200px;max-width:100%;border:1px solid var(--line);border-radius:6px;background:#000}
+  .fwpreview{margin-top:12px}
+  .fwpreview img{width:320px;max-width:100%;border:1px solid var(--line);border-radius:6px;background:#000;display:block}
+  .fwpreview .cap{font-size:12.5px;color:var(--faint);margin-top:6px;max-width:60ch}
+  .gatewhy{font-size:12.5px;color:var(--faint);margin:4px 0 6px 43px;max-width:65ch}
+  .appdetail .toolbox{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+  .appdetail .toolbox h4{margin:0 0 6px;font-size:14px;color:var(--text)}
+  .appdetail input.coord,.appdetail input.zipin{width:170px;text-transform:none;letter-spacing:0}
+  .appdetail input.zipin{width:120px}
+  .rptlist{margin-top:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .rptrow{display:flex;gap:8px 14px;flex-wrap:wrap;padding:7px 10px;font-family:var(--mono);font-size:12.5px;border-top:1px solid var(--line);color:var(--muted)}
+  .rptrow:first-child{border-top:none}
+  .rptrow .rn{color:var(--text);font-weight:700}
+  .rptempty{padding:10px 12px;font-size:13.5px;color:var(--muted)}
   .cardbox{border:1px solid var(--line);border-radius:8px;padding:10px 13px;margin-top:12px;
     font-size:13.5px;color:var(--muted);background:var(--panel2)}
   .cardbox strong{color:var(--text)}
@@ -367,6 +380,10 @@
           <option value="">Select a built-in firmware…</option>
         </select>
         <div class="catalogdetails" id="fwCatalogDetails"></div>
+        <div class="fwpreview" id="fwPreviewWrap" style="display:none">
+          <img id="fwPreviewImg" alt="Standby preview of the selected firmware theme" />
+          <div class="cap">Standby preview — design mockup the renderer was built from; on-radio rendering may differ slightly</div>
+        </div>
         <div class="srcnote" id="fwCatalogNote" style="display:none">Built-in catalog unavailable on this copy of the page — use Upload a file.</div>
       </div>
       <div id="fwUploadWrap">
@@ -383,6 +400,7 @@
     <div class="gates">
       <h3>Flash gates — all must be satisfied</h3>
       <div class="gate unmet" id="gateBackup"><span class="mark">[ ]</span><span id="gateBackupText">Factory backup completed in this session</span></div>
+      <p class="gatewhy">The backup gate protects the one-way door off stock firmware. On custom firmware the bootloader can always reflash, and the current firmware is a re-downloadable catalog package.</p>
       <div class="gate unmet" id="gateProbe"><span class="mark">[ ]</span><span>Bootloader answered the probe in this session</span></div>
       <div class="gate unmet" id="gateFile"><span class="mark">[ ]</span><span>.BF package selected and passed validation</span></div>
       <div class="gate unmet" id="gateSha"><span class="mark">[ ]</span><span>SHA-256 prefix typed correctly</span></div>
@@ -647,8 +665,13 @@ var S={
   file:null, fileValid:false,
   cpsReady:false, cpsLastActivity:0, cpsSettings:null, cpsSettingsRead:false,
   cpsSlots:null, cpsApp:null, cpsAppValid:false, cpsPendingProfile:null,
-  detected:"unknown", backupWaived:false, flowStage:"connect", view:null, fromHub:false, selAppId:null
+  detected:"unknown", backupWaived:false, backupWaiveReason:null, flowStage:"connect", view:null, fromHub:false, selAppId:null,
+  rptbookEntries:null, rptbookLookupDone:false, rptbookZip:"", rptbookRadius:25, rptbookFallback:false
 };
+/* Shared page-level geocode: the last successful ZIP lookup (RPTBOOK panel)
+   lives here so the SATELLITE panel can prefill the observer position from
+   it. Shape: {lat, lon, city, state, zip} or null. */
+var lastGeocode=null;
 
 /* ---------- RX buffer (single background reader fills this) ---------- */
 var rxBuf=[]; var rxHeardTotal=0; var rxWaiters=new Set();
@@ -779,6 +802,13 @@ function refreshControls(){
   $("btnRedetect").disabled=!S.connected || !!S.running || !serialSupported;
   $("btnAppsCps").disabled=cpsDis;
   $("btnAppsRead").disabled=cpsDis || !S.cpsReady;
+  /* App-panel tools (rendered dynamically inside the app detail panel):
+     satellite-data install + position save ride the CPS session, so they
+     follow the CPS gates; the repeater ZIP lookup is a plain web fetch and
+     only waits on another operation not running. */
+  var elSatInstall=$("btnSatInstall"); if(elSatInstall) elSatInstall.disabled=cpsDis || !S.cpsReady;
+  var elSatSave=$("btnSatSavePos"); if(elSatSave) elSatSave.disabled=cpsDis || !S.cpsReady;
+  var elRptLookup=$("btnRptLookup"); if(elRptLookup) elRptLookup.disabled=!!S.running;
   setPill($("appsCpsPill"), S.cpsReady?"CPS ready":"CPS not connected", S.cpsReady?"ok":"");
   $("cpsAppFile").disabled=!!S.running || !serialSupported;
   $("cpsProfileSelect").disabled=!!S.running || !serialSupported;
@@ -803,9 +833,15 @@ function allGatesMet(){
 }
 function updateGates(){
   setGate($("gateBackup"), S.backupDone || S.backupWaived);
-  $("gateBackupText").textContent=(S.backupWaived && !S.backupDone)
-    ? "Factory backup waived \u2014 radio was already in flash mode at detection (no backup exists)"
-    : "Factory backup completed in this session";
+  if(S.backupDone){
+    $("gateBackupText").textContent="Factory backup completed in this session";
+  }else if(S.backupWaived && S.backupWaiveReason==="custom-skip"){
+    $("gateBackupText").textContent="Backup waived \u2014 custom firmware, skipped by operator";
+  }else if(S.backupWaived){
+    $("gateBackupText").textContent="Factory backup waived \u2014 radio was already in flash mode at detection (no backup exists)";
+  }else{
+    $("gateBackupText").textContent="Factory backup completed in this session";
+  }
   setGate($("gateProbe"), S.probeOk);
   setGate($("gateFile"), S.fileValid);
   setGate($("gateSha"), shaMatches());
@@ -954,7 +990,7 @@ async function detectProbeBootloader(){
 async function doDetect(){
   if(!S.connected || S.running) return;
   setRunning("detect");
-  S.detected="unknown"; S.backupWaived=false;
+  S.detected="unknown"; S.backupWaived=false; S.backupWaiveReason=null;
   showSections(["secDetect"]);
   $("detectFlashCard").hidden=true; $("detectNoneCard").hidden=true;
   $("detectCardStatus").textContent="Detecting\u2026 trying the bf-5rh CPS handshake first.";
@@ -1107,7 +1143,7 @@ function manualDetect(kind){
   enterDetected(kind, true);
 }
 function resetFlow(){
-  S.detected="unknown"; S.backupWaived=false; S.flowStage="connect"; S.view=null; S.fromHub=false; S.selAppId=null;
+  S.detected="unknown"; S.backupWaived=false; S.backupWaiveReason=null; S.flowStage="connect"; S.view=null; S.fromHub=false; S.selAppId=null;
   setDetectPill("firmware: not detected","");
   $("detectStatus").textContent="Detection runs automatically right after Connect.";
   $("detectStatus").className="statusline";
@@ -1463,7 +1499,7 @@ function openConfirm(){
 function closeConfirm(){ $("confirmOverlay").className="overlay"; }
 
 /* ---------- Step 4: bf-5rh CPS (CPS-SPEC.md) ---------- */
-var CPS_CMD={READ:0x52, WRITE:0x57, READ_FLASH_RAW:0x44, APP_ERASE:0x41, APP_WRITE:0x61, END:0x45, ERROR:0xEE};
+var CPS_CMD={READ:0x52, WRITE:0x57, READ_FLASH_RAW:0x44, APP_ERASE:0x41, APP_WRITE:0x61, SAT_WRITE:0x53, END:0x45, ERROR:0xEE};
 var CPS_ERRORS={0x01:"bad CRC",0x02:"bad address",0x03:"bad length / unknown command"};
 var CPS_SETTINGS_ADDR=0x9000, CPS_SETTINGS_LEN=168;
 var CPS_SLOT_BASE_WIRE=0x5300; /* flash 0x14C000 / 64 */
@@ -1590,14 +1626,18 @@ function cpsNamedError(code){
   e.cpsCode=code; e.cpsName=name;
   return e;
 }
-async function cpsTransact(cmd, addr, data){
+async function cpsTransact(cmd, addr, data, timeoutMs){
   data=data||new Uint8Array(0);
   var frame=buildCpsFrame(cmd, addr, data);
+  /* timeoutMs is additive: existing callers omit it and get the normal
+     2000 ms response wait, byte-for-byte as before. Only the satellite
+     table's first chunk passes a longer wait (its flash erase is slow). */
+  var waitMs=(typeof timeoutMs==="number" && timeoutMs>0)?timeoutMs:2000;
   /* Reference check for the settings read frame is asserted in init logging (debug only). */
   for(var a=1;a<=5;a++){
     clearRx();
     await writeBytes(frame); cpsTouch();
-    var r=await readCpsFrame(2000);
+    var r=await readCpsFrame(waitMs);
     if(r.status==="frame"){
       cpsTouch();
       if(r.cmd===CPS_CMD.ERROR){
@@ -1747,6 +1787,7 @@ async function doCpsRead(){
     }
     S.cpsSlots=slots;
     renderCpsSlots();
+    prefillSatPosition();
     setPill($("cpsPill"),"CPS ready","ok");
     st.textContent="Read complete: settings + 8 app slots. Band lock is "+profileLabel(S.cpsSettings[29])+".";
     st.className="statusline ok";
@@ -1871,18 +1912,10 @@ async function doCpsInstall(){
       throw e;
     }
     logMsg("App install: slot "+slot+" erased (ACK). Writing chunks…","ok");
-    for(var i=0;i<chunks;i++){
-      var off=i*512;
-      var chunk=padded.slice(off, off+512);
-      try{ await cpsTransact(CPS_CMD.APP_WRITE, off, chunk); }
-      catch(e){
-        if(e.cpsCode===0x02) throw new Error("APP_WRITE failed with bad address (0x02) at offset "+off+" (chunk "+(i+1)+"/"+chunks+"). Abort — re-run the whole install (the session/slot state may have been lost).");
-        throw e;
-      }
-      bar.firstElementChild.style.width=Math.round((i+1)/chunks*60)+"%";
-      st.textContent="Installing — app chunk "+(i+1)+"/"+chunks+"…";
-      if(((i+1)%4===0) || i===chunks-1 || i===0) logMsg("App install: app chunk "+(i+1)+"/"+chunks+" ACKed.");
-    }
+    await writeAppChunks(slot, padded, function(frac){
+      bar.firstElementChild.style.width=Math.round(frac*60)+"%";
+      st.textContent="Installing — app chunk "+Math.round(frac*chunks)+"/"+chunks+"…";
+    });
     logMsg("App install: all chunks ACKed. Verifying by read-back ("+paddedLen+" bytes)…");
     st.textContent="Verifying — reading the slot back…";
     var readBack=new Uint8Array(paddedLen);
@@ -1898,9 +1931,24 @@ async function doCpsInstall(){
     var mismatch=-1;
     for(var k=0;k<paddedLen;k++){ if(readBack[k]!==padded[k]){ mismatch=k; break; } }
     if(mismatch===-1){
-      st.textContent="Installed and verified — read-back matches. Press “Read radio info & settings” again to see the slot listed. The radio reboots when the CPS session ends (End CPS session or ~2 s idle), after which the app appears in the radio's MENU launcher.";
-      st.className="statusline ok";
       logMsg("App install SUCCESS: verified — read-back matches ("+paddedLen+" bytes, slot "+slot+").","ok");
+      var extraMsg="", extraFail=false;
+      if(isRptbookCurrent()){
+        try{
+          var sd=await writeRptbookDataBlock(slot, app, padded, st);
+          extraMsg=" Repeater data block written and verified ("+sd+").";
+        }catch(re){
+          extraFail=true;
+          extraMsg=" WARNING: the app itself installed and verified, but its repeater data block failed: "+re.message;
+          logMsg("RPTBOOK data block failed after a successful app install: "+re.message,"err");
+        }
+      }
+      if(isSatelliteCurrent()){
+        var pi=$("satPostInstall"); if(pi) pi.hidden=false;
+        extraMsg+=" Next step: use “Install satellite data” in this panel — the SATELLITE app needs its satellite table before it can track anything.";
+      }
+      st.textContent="Installed and verified — read-back matches."+extraMsg+" Press “Read radio info & settings” again to see the slot listed. The radio reboots when the CPS session ends (End CPS session or ~2 s idle), after which the app appears in the radio's MENU launcher.";
+      st.className=extraFail?"statusline fail":"statusline ok";
     }else{
       st.textContent="Install FAILED verification: first mismatching offset "+mismatch+" (expected 0x"+padded[mismatch].toString(16).padStart(2,"0")+", read 0x"+readBack[mismatch].toString(16).padStart(2,"0")+"). Do not trust this slot — re-run the install.";
       st.className="statusline fail";
@@ -1930,11 +1978,23 @@ function setCpsAppMode(builtin){
   $("cpsAppBuiltinWrap").style.display=builtin?"":"none";
   $("cpsAppUploadWrap").style.display=builtin?"none":"";
 }
+function updateFwPreview(entry){
+  var wrap=$("fwPreviewWrap"), img=$("fwPreviewImg");
+  /* The catalog's "preview" field is optional (theme variants carry it,
+     M0 does not, and it may be absent entirely until the next catalog
+     sync) — no preview field means no image, never an error. */
+  if(!entry || !entry.preview){ wrap.style.display="none"; img.removeAttribute("src"); return; }
+  img.onerror=function(){ wrap.style.display="none"; };
+  img.onload=function(){ wrap.style.display=""; };
+  img.src=entry.preview;
+  wrap.style.display="";
+}
 function onFwSourceChange(){
   var builtin=$("fwSrcBuiltin").checked;
   setFwMode(builtin);
   $("fwCatalogSelect").value="";
   var cd=$("fwCatalogDetails"); cd.className="catalogdetails"; cd.textContent="";
+  updateFwPreview(null);
   clearBfPackage();
   logMsg("Firmware source: "+(builtin?"built-in catalog.":"file upload."));
 }
@@ -1955,7 +2015,8 @@ function catalogEntry(list, id){
 async function onFwCatalogChosen(){
   var sel=$("fwCatalogSelect"), det=$("fwCatalogDetails");
   var entry=catalogEntry(catalog?catalog.firmwares:null, sel.value);
-  if(!entry){ det.className="catalogdetails"; det.textContent=""; clearBfPackage(); return; }
+  if(!entry){ det.className="catalogdetails"; det.textContent=""; updateFwPreview(null); clearBfPackage(); return; }
+  updateFwPreview(entry);
   det.className="catalogdetails show";
   det.innerHTML="<span class='k'>Name:</span> "+escapeHtml(entry.name)+"<br/>"+
     "<span class='k'>Size:</span> "+entry.size+" bytes"+
@@ -2024,8 +2085,11 @@ function renderAppDetail(entry){
       return "<img src='"+escapeHtml(s)+"' alt='Simulator screenshot of "+escapeHtml(entry.name)+"' onerror='this.style.display=\"none\"' />";
     }).join("")+"</div>";
   }
+  if(isSatelliteEntry(entry)) out+=satToolsHtml();
+  if(isRptbookEntry(entry)) out+=rptToolsHtml();
   d.innerHTML=out;
   d.className="appdetail show";
+  attachAppToolListeners(entry);
 }
 function selectAppTile(id){
   var entry=catalogEntry(catalog?catalog.apps:null, id);
@@ -2052,6 +2116,375 @@ async function loadCatalogApp(entry){
     logMsg("Catalog: failed to fetch built-in app "+entry.file+": "+e.message,"err");
   }
 }
+/* ---------- SATELLITE + RPTBOOK app-panel tools ----------
+   Both panels live inside the graphical picker's detail panel and are
+   rendered only for their app. Everything radio-side rides the existing
+   CPS session machinery (cpsTransact / ensureCpsSession) — no new wire
+   behaviour beyond the additive SAT_WRITE command. */
+function entryKeyText(e){ return ((e&&e.id)||"")+" "+((e&&e.name)||"")+" "+((e&&e.icon)||""); }
+function isSatelliteEntry(e){ if(!e) return false; return entryKeyText(e).toUpperCase().indexOf("SATELLITE")>=0 || e.icon==="satellite"; }
+function isRptbookEntry(e){ if(!e) return false; return entryKeyText(e).toUpperCase().indexOf("RPTBOOK")>=0 || e.icon==="rptbook"; }
+function isSatelliteCurrent(){
+  if(isSatelliteEntry(catalogEntry(catalog?catalog.apps:null, S.selAppId))) return true;
+  return !!(S.cpsApp && (S.cpsApp.appName||"").toUpperCase().indexOf("SAT")===0);
+}
+function isRptbookCurrent(){
+  if(isRptbookEntry(catalogEntry(catalog?catalog.apps:null, S.selAppId))) return true;
+  return !!(S.cpsApp && (S.cpsApp.appName||"").toUpperCase().indexOf("RPTBOOK")===0);
+}
+function readInt32LE(b,off){ return (b[off] | (b[off+1]<<8) | (b[off+2]<<16) | (b[off+3]<<24)); }
+function writeInt32LE(b,off,v){ b[off]=v&0xFF; b[off+1]=(v>>8)&0xFF; b[off+2]=(v>>16)&0xFF; b[off+3]=(v>>24)&0xFF; }
+/* Read total bytes of external flash via READ_FLASH_RAW (64 bytes per
+   response, wire address = flash address / 64, consecutive). */
+async function readFlashRawBytes(wireBase, total){
+  var out=new Uint8Array(total);
+  var n=Math.ceil(total/64);
+  for(var j=0;j<n;j++){
+    var rr=await cpsTransact(CPS_CMD.READ_FLASH_RAW, wireBase+j, new Uint8Array(0));
+    if(rr.data.length!==64) throw new Error("Raw flash read at wire addr 0x"+(wireBase+j).toString(16)+" returned "+rr.data.length+" bytes — expected 64.");
+    out.set(rr.data.slice(0, Math.min(64, total-j*64)), j*64);
+  }
+  return out;
+}
+function satPrefillValues(){
+  var lat="", lon="";
+  if(S.cpsSettings && S.cpsSettings.length>=40){
+    var la=readInt32LE(S.cpsSettings,32), lo=readInt32LE(S.cpsSettings,36);
+    if(la!==0x7FFFFFFF) lat=String(la/100000);
+    if(lo!==0x7FFFFFFF) lon=String(lo/100000);
+  }
+  if(lastGeocode){ lat=String(lastGeocode.lat); lon=String(lastGeocode.lon); }
+  return {lat:lat, lon:lon};
+}
+function prefillSatPosition(){
+  var la=$("satLat"), lo=$("satLon");
+  if(!la || !lo) return;
+  var v=satPrefillValues();
+  if(v.lat!=="") la.value=v.lat;
+  if(v.lon!=="") lo.value=v.lon;
+}
+function satToolsHtml(){
+  var v=satPrefillValues();
+  return "<div class='toolbox' id='satTools'>"+
+    "<h4>Satellite data</h4>"+
+    "<p>The SATELLITE app tracks nothing until its satellite table is on the radio. Install it here, over the same CPS session — the table (appdata/satellites.bin, exactly 5,120 bytes) is written with SAT_WRITE frames and verified by read-back.</p>"+
+    "<div class='cardbox amber' id='satPostInstall' hidden><strong>SATELLITE app installed.</strong> Its satellite table is still missing — click <strong>Install satellite data</strong> below to finish the job.</div>"+
+    "<div class='row'><button class='primary' id='btnSatInstall'>Install satellite data</button></div>"+
+    "<div class='statusline' id='satGenLine'></div>"+
+    "<div class='statusline' id='satStatus'>No satellite table installed from this page in this session yet.</div>"+
+    "<h4 style='margin-top:16px'>Observer position</h4>"+
+    "<p>Your latitude / longitude (decimal degrees) are stored in the radio's settings record (bytes 32–39, degrees × 100000) so the app can compute passes for where you are. Prefilled from the radio's stored position when one is set, or from a ZIP lookup run in this session.</p>"+
+    "<div class='row'>"+
+      "<label>Latitude<br/><input type='text' class='coord' id='satLat' inputmode='decimal' placeholder='e.g. 35.2621' value='"+escapeHtml(v.lat)+"' /></label>"+
+      "<label>Longitude<br/><input type='text' class='coord' id='satLon' inputmode='decimal' placeholder='e.g. -81.1873' value='"+escapeHtml(v.lon)+"' /></label>"+
+    "</div>"+
+    "<div class='row'><button class='primary' id='btnSatSavePos'>Save position</button></div>"+
+    "<div class='statusline' id='satPosStatus'>Save reads the settings record fresh, changes only bytes 32–39, writes it back, and verifies by read-back.</div>"+
+  "</div>";
+}
+function rptToolsHtml(){
+  var r=S.rptbookRadius||25;
+  return "<div class='toolbox' id='rptTools'>"+
+    "<h4>Local repeaters by ZIP</h4>"+
+    "<p>Look up repeaters near a ZIP code and preview what will be written. <strong>Install</strong> then writes the app plus a data block built from the previewed repeaters. With no successful lookup, Install writes the owner-default repeater block instead.</p>"+
+    "<div class='row'>"+
+      "<label>ZIP code<br/><input type='text' class='zipin' id='rptZip' inputmode='numeric' maxlength='5' placeholder='e.g. 28052' value='"+escapeHtml(S.rptbookZip||"")+"' /></label>"+
+      "<label>Radius<br/><select id='rptRadius'>"+
+        "<option value='10'"+(r===10?" selected":"")+">10 miles</option>"+
+        "<option value='25'"+(r===25?" selected":"")+">25 miles</option>"+
+        "<option value='50'"+(r===50?" selected":"")+">50 miles</option>"+
+      "</select></label>"+
+      "<button class='primary' id='btnRptLookup'>Look up repeaters</button>"+
+    "</div>"+
+    "<div class='statusline' id='rptStatus'>"+(S.rptbookLookupDone?"":"No lookup yet — Install will write the owner-default repeater block.")+"</div>"+
+    "<div id='rptPreview'></div>"+
+  "</div>";
+}
+function attachAppToolListeners(entry){
+  if(isSatelliteEntry(entry)){
+    var bi=$("btnSatInstall"); if(bi) bi.addEventListener("click", doSatInstall);
+    var bs=$("btnSatSavePos"); if(bs) bs.addEventListener("click", doSatSavePos);
+  }
+  if(isRptbookEntry(entry)){
+    var bl=$("btnRptLookup"); if(bl) bl.addEventListener("click", doRptLookup);
+    if(S.rptbookLookupDone) renderRptPreview();
+  }
+  refreshControls();
+}
+/* ----- SATELLITE: satellite-data install ----- */
+async function doSatInstall(){
+  var st=$("satStatus"), gen=$("satGenLine");
+  setRunning("satInstall");
+  if(st){ st.className="statusline run"; st.textContent="Installing satellite data…"; }
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    /* Existing idle-handshake-refresh behaviour: a stale session is
+       re-handshaken before the operation starts. During the write the
+       frames themselves keep the session alive (cpsTouch on every
+       exchange); the long first-chunk wait is the radio erasing flash,
+       not an idle session. */
+    await ensureCpsSession();
+    try{
+      var jresp=await fetch("appdata/satellites.json");
+      if(jresp.ok){
+        var sj=await jresp.json();
+        if(gen && sj && sj.generated_utc) gen.textContent="Satellite table generation date (generated_utc): "+sj.generated_utc;
+      }
+    }catch(je){ if(gen) gen.textContent="Satellite table generation date unavailable — appdata/satellites.json could not be read."; }
+    var bresp=await fetch("appdata/satellites.bin");
+    if(!bresp.ok) throw new Error("Could not fetch appdata/satellites.bin (HTTP "+bresp.status+"). Nothing was written.");
+    var table=new Uint8Array(await bresp.arrayBuffer());
+    if(table.length!==5120) throw new Error("Satellite table is "+table.length+" bytes — expected exactly 5,120. Aborting; nothing was written.");
+    logMsg("Satellite data: fetched appdata/satellites.bin — 5,120 bytes. Writing via SAT_WRITE (10 chunks of 512)…");
+    for(var i=0;i<10;i++){
+      var off=i*512;
+      if(st) st.textContent="Writing satellite table — chunk "+(i+1)+" of 10"+(i===0?" (the first chunk erases flash sectors and can take up to ~20 s to answer)":"")+"…";
+      /* Chunk 0 gets the extended 20 s response wait; later chunks use
+         the normal CPS timeout. */
+      await cpsTransact(CPS_CMD.SAT_WRITE, off, table.slice(off, off+512), i===0?20000:2000);
+      logMsg("Satellite data: chunk "+(i+1)+"/10 ACKed (addr "+off+").");
+    }
+    if(st) st.textContent="Verifying — reading all 5,120 bytes back from flash 0x18C000…";
+    var rb=await readFlashRawBytes(0x6300, 5120); /* wire address = 0x18C000 / 64 */
+    var mismatch=-1;
+    for(var k=0;k<5120;k++){ if(rb[k]!==table[k]){ mismatch=k; break; } }
+    if(mismatch===-1){
+      if(st){ st.textContent="Satellite data installed and verified — read-back matches all 5,120 bytes."; st.className="statusline ok"; }
+      logMsg("Satellite data install SUCCESS: verified — read-back matches (5,120 bytes at flash 0x18C000).","ok");
+    }else{
+      if(st){ st.textContent="Satellite data verification FAILED: first mismatching offset "+mismatch+" (expected 0x"+table[mismatch].toString(16).padStart(2,"0")+", read 0x"+rb[mismatch].toString(16).padStart(2,"0")+")."; st.className="statusline fail"; }
+      logMsg("Satellite data verification FAILED at offset "+mismatch+".","err");
+    }
+  }catch(e){
+    if(st){ st.textContent="Satellite data install failed: "+e.message; st.className="statusline fail"; }
+    logMsg("Satellite data install failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
+}
+/* ----- SATELLITE: observer position ----- */
+async function doSatSavePos(){
+  var st=$("satPosStatus");
+  var lat=parseFloat(($("satLat")||{}).value), lon=parseFloat(($("satLon")||{}).value);
+  if(!isFinite(lat) || !isFinite(lon) || lat<-90 || lat>90 || lon<-180 || lon>180){
+    if(st){ st.textContent="Enter a valid latitude (−90…90) and longitude (−180…180) in decimal degrees first."; st.className="statusline fail"; }
+    return;
+  }
+  setRunning("satSavePos");
+  if(st){ st.className="statusline run"; st.textContent="Saving position…"; }
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    await ensureCpsSession();
+    var fresh=await cpsTransact(CPS_CMD.READ, CPS_SETTINGS_ADDR, new Uint8Array(0));
+    if(!fresh.data || fresh.data.length!==CPS_SETTINGS_LEN) throw new Error("Settings read returned "+(fresh.data?fresh.data.length:0)+" bytes — expected 168. Aborting; nothing written.");
+    var rec=Uint8Array.from(fresh.data);
+    writeInt32LE(rec, 32, Math.round(lat*100000));
+    writeInt32LE(rec, 36, Math.round(lon*100000));
+    await cpsTransact(CPS_CMD.WRITE, CPS_SETTINGS_ADDR, rec);
+    var verify=await cpsTransact(CPS_CMD.READ, CPS_SETTINGS_ADDR, new Uint8Array(0));
+    if(!verify.data || verify.data.length!==CPS_SETTINGS_LEN) throw new Error("Verify read returned "+(verify.data?verify.data.length:0)+" bytes — expected 168.");
+    var ok=true;
+    for(var i=32;i<40;i++){ if(verify.data[i]!==rec[i]){ ok=false; break; } }
+    S.cpsSettings=Uint8Array.from(verify.data); S.cpsSettingsRead=true;
+    renderCpsSettings();
+    if(ok){
+      if(st){ st.textContent="Position saved and verified by read-back: lat "+lat+", lon "+lon+" (stored ×100000 at settings bytes 32–39)."; st.className="statusline ok"; }
+      logMsg("Observer position saved and verified: lat "+lat+", lon "+lon+".","ok");
+    }else{
+      if(st){ st.textContent="Position FAILED verification: settings bytes 32–39 read back differently than written."; st.className="statusline fail"; }
+      logMsg("Observer position verification FAILED (bytes 32–39 mismatch).","err");
+    }
+  }catch(e){
+    if(st){ st.textContent="Save position failed: "+e.message; st.className="statusline fail"; }
+    logMsg("Save position failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
+}
+/* ----- RPTBOOK: ZIP lookup + preview ----- */
+function haversineMiles(lat1, lon1, lat2, lon2){
+  var R=3958.8, rad=Math.PI/180;
+  var dLat=(lat2-lat1)*rad, dLon=(lon2-lon1)*rad;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function toneHuman(v){
+  v=v|0;
+  if(v===0) return "none";
+  if(v>250) return "CTCSS "+(v/10).toFixed(1)+" Hz";
+  if(v>=106) return "DCS "+v+" inv";
+  return "DCS "+v;
+}
+function fmtMHz(hz){
+  var s=(hz/1000000).toFixed(6).replace(/0+$/,"").replace(/\.$/,".0");
+  return s;
+}
+function renderRptPreview(){
+  var pv=$("rptPreview"), st=$("rptStatus");
+  if(!pv) return;
+  if(S.rptbookFallback){
+    pv.innerHTML="<div class='rptlist'><div class='rptempty'>No repeater data available for this area yet.<br/>Installing will write the owner-default repeater block instead.</div></div>";
+    return;
+  }
+  if(!S.rptbookEntries || !S.rptbookEntries.length){ pv.innerHTML=""; return; }
+  var rows=S.rptbookEntries.map(function(e){
+    return "<div class='rptrow'><span class='rn'>"+escapeHtml(String(e.name||""))+"</span>"+
+      "<span>"+fmtMHz(e.rx_hz)+" MHz</span>"+
+      "<span>TX tone: "+escapeHtml(toneHuman(e.tx_tone))+"</span>"+
+      "<span>"+e.dist.toFixed(1)+" mi</span></div>";
+  }).join("");
+  pv.innerHTML="<div class='rptlist'>"+rows+"</div>";
+  if(st && lastGeocode){
+    st.textContent=S.rptbookEntries.length+" repeater(s) within "+S.rptbookRadius+" miles of "+(lastGeocode.city||"")+", "+(lastGeocode.state||"")+" "+lastGeocode.zip+" ("+lastGeocode.lat+", "+lastGeocode.lon+") — Install will write these into the app.";
+    st.className="statusline ok";
+  }
+}
+async function doRptLookup(){
+  var st=$("rptStatus"), pv=$("rptPreview");
+  var zip=(($("rptZip")||{}).value||"").trim();
+  var radius=parseInt(($("rptRadius")||{}).value||"25",10);
+  if(!/^\d{5}$/.test(zip)){
+    if(st){ st.textContent="Enter a 5-digit ZIP code first."; st.className="statusline fail"; }
+    return;
+  }
+  S.rptbookZip=zip; S.rptbookRadius=radius;
+  setRunning("rptLookup");
+  if(st){ st.className="statusline run"; st.textContent="Looking up ZIP "+zip+"…"; }
+  try{
+    var zresp=await fetch("https://api.zippopotam.us/us/"+zip);
+    if(!zresp.ok) throw new Error("ZIP lookup failed (HTTP "+zresp.status+") — check the ZIP code and try again.");
+    var z=await zresp.json();
+    var place=(z && z.places && z.places[0])||null;
+    if(!place) throw new Error("ZIP lookup returned no place for "+zip+".");
+    var lat=parseFloat(place.latitude), lon=parseFloat(place.longitude);
+    if(!isFinite(lat) || !isFinite(lon)) throw new Error("ZIP lookup returned no usable coordinates for "+zip+".");
+    var city=place["place name"]||"", stateAbbr=place["state abbreviation"]||place.state||"";
+    lastGeocode={lat:lat, lon:lon, city:city, state:stateAbbr, zip:zip};
+    logMsg("RPTBOOK lookup: ZIP "+zip+" — "+city+", "+stateAbbr+" at "+lat+", "+lon+".");
+    if(st) st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". Fetching repeater shard "+zip.slice(0,3)+".json…";
+    var list=null;
+    try{
+      var sresp=await fetch("repeaters/"+zip.slice(0,3)+".json");
+      if(!sresp.ok) throw new Error("HTTP "+sresp.status);
+      var sj=await sresp.json();
+      list=(sj && Array.isArray(sj.repeaters))?sj.repeaters:null;
+    }catch(se){ list=null; }
+    var within=[];
+    if(list){
+      list.forEach(function(e){
+        if(!e || !isFinite(e.lat) || !isFinite(e.lon) || !isFinite(e.rx_hz)) return;
+        var d=haversineMiles(lat, lon, Number(e.lat), Number(e.lon));
+        if(d<=radius) within.push({name:String(e.name||""), rx_hz:Number(e.rx_hz), tx_hz:Number(e.tx_hz)||0, tx_tone:Number(e.tx_tone)||0, rx_tone:Number(e.rx_tone)||0, lat:Number(e.lat), lon:Number(e.lon), dist:d});
+      });
+      within.sort(function(a,b){ return a.dist-b.dist; });
+      within=within.slice(0,272);
+    }
+    S.rptbookLookupDone=true;
+    if(!list || within.length===0){
+      S.rptbookEntries=null; S.rptbookFallback=true;
+      renderRptPreview();
+      if(st){ st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". No repeater data for this area yet — Install will write the owner-default repeater block instead."; st.className="statusline"; }
+      logMsg("RPTBOOK lookup: "+(list?("no repeaters within "+radius+" miles"):"repeater shard unavailable")+" — install will fall back to the owner-default block.","warn");
+    }else{
+      S.rptbookEntries=within; S.rptbookFallback=false;
+      renderRptPreview();
+      logMsg("RPTBOOK lookup: "+within.length+" repeater(s) within "+radius+" miles of "+zip+" — Install will write these.","ok");
+    }
+    prefillSatPosition();
+  }catch(e){
+    if(st){ st.textContent="Lookup failed: "+e.message; st.className="statusline fail"; }
+    logMsg("RPTBOOK lookup failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
+}
+/* ----- RPTBOOK: RPBK data block (byte-matches make_rpbk.py; source 1 = ZIP) ----- */
+function buildRpbkBlock(entries, source){
+  var count=Math.min(entries.length, 272);
+  var recs=new Uint8Array(count*30);
+  for(var i=0;i<count;i++){
+    var e=entries[i], o=i*30;
+    var nm=String(e.name||"");
+    for(var c=0;c<16;c++){
+      var code=c<nm.length?nm.charCodeAt(c):0;
+      recs[o+c]=(code>=32 && code<127)?code:(code===0?0:0x3F);
+    }
+    var dv=new DataView(recs.buffer, recs.byteOffset);
+    dv.setUint32(o+16, e.rx_hz>>>0, true);
+    dv.setUint32(o+20, (e.tx_hz||0)>>>0, true);
+    dv.setUint16(o+24, e.tx_tone&0xFFFF, true);
+    dv.setUint16(o+26, e.rx_tone&0xFFFF, true);
+    var flags=0;
+    if(e.tx_hz && e.tx_hz!==e.rx_hz) flags|=1;
+    if(e.tx_tone) flags|=2;
+    if(e.rx_tone) flags|=4;
+    recs[o+28]=flags;
+    recs[o+29]=0;
+  }
+  var crc=crc16Xmodem(recs);
+  var block=new Uint8Array(16+recs.length);
+  block[0]=0x52; block[1]=0x50; block[2]=0x42; block[3]=0x4B; /* "RPBK" */
+  block[4]=1; block[5]=source&0xFF;
+  block[6]=count&0xFF; block[7]=(count>>8)&0xFF;
+  block[8]=crc&0xFF; block[9]=(crc>>8)&0xFF;
+  block.set(recs,16);
+  return block;
+}
+async function writeAppChunks(slot, padded, progressFn){
+  var chunks=padded.length/512;
+  for(var i=0;i<chunks;i++){
+    var off=i*512;
+    try{ await cpsTransact(CPS_CMD.APP_WRITE, off, padded.slice(off, off+512)); }
+    catch(e){
+      if(e.cpsCode===0x02) throw new Error("APP_WRITE failed with bad address (0x02) at offset "+off+" (chunk "+(i+1)+"/"+chunks+"). Abort — re-run the whole install (the session/slot state may have been lost).");
+      throw e;
+    }
+    if(progressFn) progressFn((i+1)/chunks);
+    if(((i+1)%4===0) || i===chunks-1 || i===0) logMsg("App install: app chunk "+(i+1)+"/"+chunks+" ACKed.");
+  }
+}
+async function writeRptbookDataBlock(slot, app, paddedApp, st){
+  var block, sourceDesc;
+  if(S.rptbookEntries && S.rptbookEntries.length){
+    block=buildRpbkBlock(S.rptbookEntries, 1);
+    sourceDesc="ZIP lookup ("+Math.min(S.rptbookEntries.length,272)+" repeaters, source byte 1)";
+  }else{
+    var dresp=await fetch("appdata/rptbook-default.bin");
+    if(!dresp.ok) throw new Error("Could not fetch appdata/rptbook-default.bin (HTTP "+dresp.status+") — no ZIP lookup was done, so the owner-default block is required.");
+    block=new Uint8Array(await dresp.arrayBuffer());
+    sourceDesc="owner-default block (appdata/rptbook-default.bin, "+block.length+" bytes)";
+  }
+  logMsg("RPTBOOK data: writing "+sourceDesc+" at slot "+slot+" offset 0x6000…");
+  if(st) st.textContent="RPTBOOK: checking the data area at slot offset 0x6000…";
+  var dataWire=CPS_SLOT_BASE_WIRE + slot*0x200 + 0x180; /* (0x14C000 + slot*0x8000 + 0x6000) / 64 */
+  var existing=await readFlashRawBytes(dataWire, 64);
+  var hasRpbk=existing[0]===0x52 && existing[1]===0x50 && existing[2]===0x42 && existing[3]===0x4B;
+  if(hasRpbk){
+    logMsg("RPTBOOK data: a valid RPBK block is already programmed at slot+0x6000 — it cannot be overwritten in place. Erasing the slot and reinstalling the app first…","warn");
+    if(st) st.textContent="RPTBOOK: data area already programmed — erasing the slot and reinstalling the app, then writing the new block…";
+    await cpsTransact(CPS_CMD.APP_ERASE, slot, new Uint8Array(0));
+    await writeAppChunks(slot, paddedApp, null);
+    var appRb=await readFlashRawBytes(CPS_SLOT_BASE_WIRE + slot*0x200, paddedApp.length);
+    for(var q=0;q<paddedApp.length;q++){ if(appRb[q]!==paddedApp[q]) throw new Error("RPTBOOK reinstall after erase failed verification at offset "+q+". Aborting before the data-block write."); }
+    logMsg("RPTBOOK data: app reinstalled and verified after erase — data area is fresh.","ok");
+  }
+  var paddedLen=Math.ceil(block.length/512)*512;
+  var padded=new Uint8Array(paddedLen); padded.fill(0xFF); padded.set(block,0);
+  var chunks=paddedLen/512;
+  for(var i=0;i<chunks;i++){
+    var aoff=0x6000+i*512;
+    try{ await cpsTransact(CPS_CMD.APP_WRITE, aoff, padded.slice(i*512, i*512+512)); }
+    catch(e){
+      if(e.cpsCode===0x02) throw new Error("RPTBOOK data APP_WRITE failed with bad address (0x02) at slot offset 0x"+aoff.toString(16)+". Abort — re-run the whole install.");
+      throw e;
+    }
+    if(st) st.textContent="RPTBOOK: writing data block — chunk "+(i+1)+"/"+chunks+"…";
+  }
+  if(st) st.textContent="RPTBOOK: verifying the data block by read-back…";
+  var rb=await readFlashRawBytes(dataWire, paddedLen);
+  var mismatch=-1;
+  for(var k=0;k<paddedLen;k++){ if(rb[k]!==padded[k]){ mismatch=k; break; } }
+  if(mismatch===-1){
+    logMsg("RPTBOOK data SUCCESS: block verified — read-back matches ("+paddedLen+" bytes at slot offset 0x6000, "+sourceDesc+").","ok");
+    return sourceDesc;
+  }
+  throw new Error("RPTBOOK data verification FAILED: first mismatching offset "+mismatch+" at slot+0x6000 (expected 0x"+padded[mismatch].toString(16).padStart(2,"0")+", read 0x"+rb[mismatch].toString(16).padStart(2,"0")+").");
+}
+
 async function loadCatalog(){
   try{
     var resp=await fetch("catalog.json");
@@ -2106,7 +2539,7 @@ $("btnRedetect").addEventListener("click", doDetect);
 $("btnManualStock").addEventListener("click", function(){ manualDetect("stock"); });
 $("btnManualCustom").addEventListener("click", function(){ manualDetect("custom"); });
 $("btnFlashModeGo").addEventListener("click", function(){
-  S.backupWaived=true;
+  S.backupWaived=true; S.backupWaiveReason="flash-mode";
   $("flashModeRisk").hidden=false;
   showSections(["secFlash"]);
   logMsg("Flow: continuing to the flash from flash mode — backup gate waived (no backup exists).","warn");
@@ -2118,7 +2551,18 @@ $("btnFlashModeNormal").addEventListener("click", function(){
   logMsg("Flow: waiting for a normal power-on — re-run detection afterwards.");
 });
 $("btnSkipBackup").addEventListener("click", function(){
-  if(S.flowStage==="custom-backup"){ logMsg("Flow: optional backup skipped by operator."); enterHub(); }
+  /* Custom flow ONLY: this button is only shown on the optional (custom)
+     backup card, and this handler double-checks the stage, so the stock
+     flow has no waiver path — stock still requires a completed backup.
+     Skipping waives the backup gate for the Upgrade → Probe → Flash path:
+     with backupWaived set, probe + firmware selection satisfy allGatesMet
+     with backupDone still false. */
+  if(S.flowStage==="custom-backup"){
+    S.backupWaived=true; S.backupWaiveReason="custom-skip";
+    logMsg("Flow: optional backup skipped by operator — backup gate waived (custom firmware).","warn");
+    updateGates();
+    enterHub();
+  }
 });
 $("tileUpgrade").addEventListener("click", function(){ openTile("upgrade"); });
 $("tileCps").addEventListener("click", function(){ openTile("cps"); });
