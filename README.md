@@ -8,7 +8,7 @@ The AR-5RM is analog FM only (no vocoder hardware). This is a project for its ow
 
 ## Status (2026-11-24)
 - Platform reverse engineering: done upstream (amoxu/Baofeng-UV-5RM-5RH-RE).
-- Dev unit torn down and documented — see `teardown/`.
+- One unit torn down and documented — see `teardown/` (the BK unit, opened by accident; the NRF dev unit is still sealed and its board unverified).
 - Route chosen: **port bf-5rh** (board-definition job), from-scratch firmware as fallback.
 - Next: M0 prep — clone the RE repo + bf-5rh on the build box, get bf-5rh compiling
   clean, draft the 5RB10W-V02 board definition. **No radio has been flashed.**
@@ -20,5 +20,5 @@ The AR-5RM is analog FM only (no vocoder hardware). This is a project for its ow
 
 ## Rules
 - Nothing is flashed to a radio without the owner's separate explicit go, per flash.
-- The second AR-5RM (the "BK" unit) stays sealed and stock as the reference radio.
+- The "BK" unit stays stock and unflashed as the reference radio (case opened once by accident — see the teardown note).
 - No stock firmware images or decrypted factory material in this repo, ever.

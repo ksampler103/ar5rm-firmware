@@ -11,7 +11,7 @@ are impossible and out of scope). Preston knows this; it is a project for its ow
 
 ## Hard rules
 - **Nothing gets flashed to a radio without Preston's separate explicit go for that flash.**
-- Unit 1 (BK) stays sealed and stock forever — it is the reference radio.
+- Unit 1 (BK) stays stock and unflashed — it is the reference radio. (Case opened once by accident, Nov 24, 2026 — see teardown note.)
 - Unit 2 (NRF) is the designated dev/sacrificial unit.
 - Respect upstream licenses; check bf-5rh and mod licenses before reusing code.
 - Never commit stock firmware images or decrypted factory material to a public repo.
@@ -19,10 +19,10 @@ are impossible and out of scope). Preston knows this; it is a project for its ow
 ## Preston's units (both firmware v0.14)
 | Unit | Hold-8 screen | Role |
 |---|---|---|
-| 1 "BK" | `5rhbk ver v0.14 bf` | His user (the Nov 15 NXDN ear-test radio). Sealed, stock, reference. |
-| 2 "NRF" | `5RHNRF / Ver v0.14 / bf` | Spare. Teardown + dev unit. |
+| 1 "BK" | `5rhbk ver v0.14 bf` | His user (the Nov 15 NXDN ear-test radio). Stock and unflashed — the reference radio. Case opened once by accident (Nov 24, 2026; the NRF was the intended teardown target): dropped, keypad flex latch broken, flex shimmed with paper+tape, working. |
+| 2 "NRF" | `5RHNRF / Ver v0.14 / bf` | Spare. Designated dev unit. Still sealed, never opened — its board revision is unknown (the teardown data in this brief is from the BK unit's board). |
 
-## Hardware (teardown 2026-11-24 — see `teardown/TEARDOWN-2026-11-24.md` + photos)
+## Hardware (teardown 2026-11-24 of the BK unit — see `teardown/TEARDOWN-2026-11-24.md` + photos; the NRF unit's board is unverified)
 - PCB **5RB10W-V02** (purple; shield-can lands, no cans fitted) — same family as the
   RE-documented 5RB10W **V01**, one revision newer.
 - MCU: LQFP-48, marking unreadable; expected customized Artery **AT32F421C8T7**
