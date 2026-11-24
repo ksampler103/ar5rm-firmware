@@ -1,6 +1,7 @@
 # bf-5rh overlay-app host simulator workspace.
-# `gen/` is produced by gen_wrappers.py and is not committed; the glob
-# members below simply match nothing until it exists.
+# `gen/` is produced by gen_wrappers.py and `gencore/` by
+# gen_core.py; neither is committed; the glob members below simply
+# match nothing until they exist.
 [workspace]
 resolver = "2"
-members = ["harness", "abi", "gen/*", "gen/*/wrap*"]
+members = ["harness", "abi", "gen/*", "gen/*/wrap*", "gencore/*"]

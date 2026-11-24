@@ -153,6 +153,20 @@ clock (no timezone support in the firmware), battery shown as volts
 bottom lines show last-signal/status instead of the mockup's
 app-data line.
 
+**Pre-flash theme verification exists** (2026-11-24): the core-UI
+simulator (`tools/simulator/`, `gen_core.py`) compiles these exact
+renderer sources for the host and renders every variant from
+Preston's real channels/settings — frames in
+`tools/simulator/examples/standby-*.png`, and the web flasher's
+picker previews are these renders, not the mockups. Two deltas the
+renders surfaced that the mockup comparison had not documented:
+the Clean Modern palette as shipped is a saturated royal blue
+where the mockup is a muted slate, and the `·` separators written
+in `standby.rs` (5 places) render as `?` — the embedded-graphics
+ASCII fonts have no middle-dot glyph, so the radio will show the
+same `?`. Both are cosmetic; neither is fixed here (any fix is a
+firmware change and bumps the version).
+
 ## Variant sizes (raw .bin; limit 61,440 B)
 
 | Variant | Raw size | Margin | .BF size | .BF SHA-256 |
@@ -173,10 +187,11 @@ tool — the re-wrapped M0 reproduces the flashed file's SHA-256
 
 1. Flash **Fork 1 — Data Dense** (`bf5rh-fork1-dense.BF`, SHA-256
    `5cf38268…` above) through the flasher's usual gates.
-2. Standby should match the Data Dense mockup: full data sheet for
-   the A band (name/SQL, RX freq + offset, TX freq + tone, power /
-   bandwidth / live RSSI), B section below, clock + battery volts in
-   the header.
+2. Standby should match the core-UI simulator's Data Dense render
+   (`tools/simulator/examples/standby-dense.png`): full data sheet
+   for the A band (name/SQL, RX freq + offset, TX freq + tone,
+   power / bandwidth / live RSSI), B section below, clock + battery
+   volts in the header.
 3. Behaviour checks: dual-watch rows both live; RX indicator + RSSI
    move on a NOAA channel; TX on GMRS shows the TX state and timer;
    the NO CHANNELS / TX PROHIBITED overlays still appear when their
@@ -194,6 +209,10 @@ tool — the re-wrapped M0 reproduces the flashed file's SHA-256
 
 ## Changelog
 
+- 2026-11-24 (evening) — Core-UI simulator renders all four
+  variants from the shipping sources (fork commit unchanged,
+  7d2de0d); flasher previews swapped from mockups to the true
+  renders. No firmware change, no version bump.
 - 2026-11-24 (later) — Rework per Preston's redirect: core audit +
   TextBuf slimming (−396 B theme-less base), compile-time per-theme
   variants replace the runtime THM1 design (contract retired, sector

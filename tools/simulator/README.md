@@ -157,6 +157,60 @@ scenario. Custom apps are read from the repo
 (`../web-flasher/custom-apps` by default), upstream apps from
 `BF5RH_UPSTREAM`.
 
+## Core-UI simulator (fork standby screens)
+
+The app simulator above runs overlay apps; the fork's **core
+standby screen** is rendered by a sibling mode, `gen_core.py`. It
+copies the fork's actual renderer sources (`src/ui/standby.rs`,
+`theme.rs`, `icons.rs` — verbatim, provenance in `coresrcs/`) into
+one generated crate per theme variant under `gencore/`, because the
+theme is a compile-time cargo feature of the fork, exactly as in
+the firmware. Each crate pairs the renderer with a mock
+`crate::app` (`coreui/mock_app.rs`, hand-written and checked in)
+that implements exactly the getters the renderer calls, with the
+firmware's own semantics for the derived values (S-meter curves,
+`rssi = raw − 170`, battery volts formula — copied from
+`src/app/mod.rs`).
+
+```sh
+python3 gen_core.py            # BF5RH_FORK overrides the fork path
+cargo build -p bf5rh-coreui-apx -p bf5rh-coreui-clean \
+            -p bf5rh-coreui-dense -p bf5rh-coreui-minimal
+./target/debug/sim-standby-dense                 # idle frame
+./target/debug/sim-standby-dense --rx            # squelch open on master
+```
+
+State mapping (defaults = the design mockups' scenario, from
+Preston's real data): master = his channel #21 "GMRS 20"
+(462.6750), slave = #43 "WX3PA4" (162.4750), loaded from
+`data/channels.bin` by the firmware's own `load_channel` rules;
+settings (SQL, dual watch, channel display mode, battery
+calibration) from `data/settings.bin` at the firmware's offsets.
+The RF model supplies the slave's −42 dBm (his bench measurement);
+`--rx` puts −71 dBm on the master and makes it the watched side.
+The clock is scenario time (`--utc-mins`, default 232 = 03:52).
+Battery bars use a **mock** calibration table — the radio's real
+DEV_BATT table was never captured — chosen to read 3 of 4 bars at
+the scenario voltage (7.90 V from his real `battery_cal_raw`).
+
+Frames land in `runs/standby-<theme>/`; the verification set is
+committed under `examples/standby-*.png` (plus `standby-dense-rx`).
+
+Known limits of the core-UI mode:
+
+- Only the standby screen: boot, list/launcher, scan and CPS
+  screens are not rendered (they keep upstream colours in every
+  variant anyway).
+- One static state per run — no key input, no blink phase sweep;
+  the frame is the renderer's second (dynamic) pass over a fixed
+  snapshot.
+- PNG colours are exact RGB565 expansions; the radio's ST7735
+  panel shifts them (gamma, viewing angle), so treat hue as
+  indicative, geometry and text as exact.
+- States the mock cannot reproduce: anything needing the real
+  battery calibration table (bar thresholds), a live microphone
+  (MIC meter), or the satellite app's UTC fix (clock source).
+
 ## Limitations
 
 - One app run per process; app `static`s therefore persist across
@@ -164,9 +218,10 @@ scenario. Custom apps are read from the repo
   segment — chained segments that pass state only via statics could
   differ; the shipped multi-segment apps use the handoff buffer,
   which is modelled exactly).
-- The core standby UI is **not** simulated — only overlay apps run.
-  What an app hands back on Exit (e.g. rptbook's tune handoff) is
-  logged, not acted on by a standby screen.
+- Core UI beyond the standby screen is **not** simulated (see the
+  core-UI section above for what is). What an app hands back on
+  Exit (e.g. rptbook's tune handoff) is logged, not acted on by a
+  standby screen.
 - RF/FM/battery behaviour is a model, not a receiver: no fading,
   no adjacent-channel effects, squelch is a hard threshold.
 - `delay_ms` advances the virtual clock without delivering ticks.
