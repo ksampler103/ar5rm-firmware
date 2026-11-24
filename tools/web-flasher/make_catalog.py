@@ -43,6 +43,26 @@ FIRMWARE_META = {
         "name": "bf-5rh M0 (upstream, unmodified)",
         "notes": "First-flash build, boots on 5RH10W-V05, all subsystems verified 2026-11-24.",
     },
+    "bf5rh-fork1-apx.BF": {
+        "id": "bf5rh-fork1-apx",
+        "name": "Fork 1 — APX Pro theme",
+        "notes": "bf-5rh + slimmed core with the APX Pro standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+    },
+    "bf5rh-fork1-clean.BF": {
+        "id": "bf5rh-fork1-clean",
+        "name": "Fork 1 — Clean Modern theme",
+        "notes": "bf-5rh + slimmed core with the Clean Modern standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+    },
+    "bf5rh-fork1-dense.BF": {
+        "id": "bf5rh-fork1-dense",
+        "name": "Fork 1 — Data Dense theme",
+        "notes": "bf-5rh + slimmed core with the Data Dense standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+    },
+    "bf5rh-fork1-minimal.BF": {
+        "id": "bf5rh-fork1-minimal",
+        "name": "Fork 1 — Minimal Dark theme",
+        "notes": "bf-5rh + slimmed core with the Minimal Dark standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+    },
 }
 
 APP_META = {

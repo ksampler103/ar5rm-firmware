@@ -1,6 +1,38 @@
 {
   "firmwares": [
     {
+      "id": "bf5rh-fork1-apx",
+      "name": "Fork 1 \u2014 APX Pro theme",
+      "file": "firmware/bf5rh-fork1-apx.BF",
+      "size": 57108,
+      "sha256": "3edf67505ce2c6d44202f715266755c1526614626101462f2f125158d87a63ad",
+      "notes": "bf-5rh + slimmed core with the APX Pro standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+    },
+    {
+      "id": "bf5rh-fork1-clean",
+      "name": "Fork 1 \u2014 Clean Modern theme",
+      "file": "firmware/bf5rh-fork1-clean.BF",
+      "size": 57176,
+      "sha256": "cf329090449b556bb836b4e1de9bc8b1390817116317711a49e991f21e73f13a",
+      "notes": "bf-5rh + slimmed core with the Clean Modern standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+    },
+    {
+      "id": "bf5rh-fork1-dense",
+      "name": "Fork 1 \u2014 Data Dense theme",
+      "file": "firmware/bf5rh-fork1-dense.BF",
+      "size": 56936,
+      "sha256": "5cf38268cacf777462013b6d290ff0a174f23c996b2c7b8cec42bba749fede60",
+      "notes": "bf-5rh + slimmed core with the Data Dense standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+    },
+    {
+      "id": "bf5rh-fork1-minimal",
+      "name": "Fork 1 \u2014 Minimal Dark theme",
+      "file": "firmware/bf5rh-fork1-minimal.BF",
+      "size": 54300,
+      "sha256": "bed070996edf47138e495d00b586dd2efbc096b4d2f4568c43ab61dc77b60f54",
+      "notes": "bf-5rh + slimmed core with the Minimal Dark standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+    },
+    {
       "id": "bf5rh-m0",
       "name": "bf-5rh M0 (upstream, unmodified)",
       "file": "firmware/bf5rh-m0.BF",
@@ -17,7 +49,14 @@
       "size": 10188,
       "sha256": "45ea08934ebe353d81cb01ae2f72cc646fad92acf3e8bc45518528512b25cafb",
       "segments": 1,
-      "notes": "Activity logger: scans programmed channels, logs squelch hits (persistent)."
+      "notes": "Activity logger: scans programmed channels, logs squelch hits (persistent).",
+      "icon": "actlog",
+      "blurb": "Unattended activity logger. It scans the radio's programmed channels (about 90 ms per channel, speaker muted) and records every squelch hit \u2014 frequency, start time, peak RSSI, duration \u2014 to flash memory, where the log survives app exit and power cycles (up to 768 hits).",
+      "usage": "Leave it running on a shelf or in the car; open the review view (MENU) later to see what was active and when. * + MENU clears the log.",
+      "screenshots": [
+        "appimg/actlog-1.png",
+        "appimg/actlog-2.png"
+      ]
     },
     {
       "id": "chanmgr",
@@ -26,7 +65,13 @@
       "size": 7808,
       "sha256": "2460505575c2bf60c9e7543bd06f8238f1582dc32f00b919ebeee46dd2382f07",
       "segments": 1,
-      "notes": "Channel manager."
+      "notes": "Channel manager.",
+      "icon": "chanmgr",
+      "blurb": "Channel manager for the radio's programmed memory channels: browse the channel list with names and frequencies, and manage entries without a computer.",
+      "usage": "Scroll the list to review channels; follow the on-screen keys to edit or clear an entry.",
+      "screenshots": [
+        "appimg/chanmgr-1.png"
+      ]
     },
     {
       "id": "fm",
@@ -35,7 +80,13 @@
       "size": 3800,
       "sha256": "54913aec9fdd575d5bd88faeb5b24581bb57cf02054f1b3d3955afd4d622c2e3",
       "segments": 1,
-      "notes": "FM broadcast radio."
+      "notes": "FM broadcast radio.",
+      "icon": "fm",
+      "blurb": "FM broadcast receiver for the 87.5\u2013108 MHz band, using the radio's dedicated FM tuner chip. Tune by hand, step through the band, or seek to the next station; up to 30 FM presets are kept in the radio's FM channel list.",
+      "usage": "Open FM from the launcher, then use the arrow keys to tune/step and MENU to seek.",
+      "screenshots": [
+        "appimg/fm-1.png"
+      ]
     },
     {
       "id": "foxhunt",
@@ -44,7 +95,14 @@
       "size": 4764,
       "sha256": "cc75095c292b8ce7d9925820b4fd0e969d0e8f705fcf766835ea3cb37ae78d0b",
       "segments": 1,
-      "notes": "Direction-finding helper: big RSSI readout, peak hold, bearing samples."
+      "notes": "Direction-finding helper: big RSSI readout, peak hold, bearing samples.",
+      "icon": "foxhunt",
+      "blurb": "Direction-finding helper for hunting a transmitter on foot: a big live RSSI readout in dBm with a bar graph and decaying peak marker, plain-language guidance (STRONG/WARM/WEAK with body-block and attenuation prompts), and up to 8 bearing samples you can snapshot as you move.",
+      "usage": "Walk the area watching the readout and peak; press MENU at each bearing point to save a sample, and # toggles a beeper whose rate rises with signal strength.",
+      "screenshots": [
+        "appimg/foxhunt-1.png",
+        "appimg/foxhunt-2.png"
+      ]
     },
     {
       "id": "rptbook",
@@ -53,7 +111,14 @@
       "size": 10268,
       "sha256": "a058997f5b01d12ed81aff9ae13bab8797b547f99d488fd9c0f9e196ed5884d8",
       "segments": 1,
-      "notes": "Repeater book: Preston's programmed channels as a tuneable directory (accepts injected ZIP data)."
+      "notes": "Repeater book: Preston's programmed channels as a tuneable directory (accepts injected ZIP data).",
+      "icon": "rptbook",
+      "blurb": "A tuneable repeater directory baked from Preston's own programmed channels (165 entries, parsed from his pre-flash backup): names, frequencies and tones, read-only. It also accepts an injected data block (the ZIP-code flow), so a future web page can load repeaters near any ZIP without rebuilding the app.",
+      "usage": "Scroll to an entry and press MENU to tune it exactly in-app; EXIT after a tune lands the standby VFO on the entry's RX frequency.",
+      "screenshots": [
+        "appimg/rptbook-1.png",
+        "appimg/rptbook-2.png"
+      ]
     },
     {
       "id": "satellite",
@@ -62,7 +127,13 @@
       "size": 25672,
       "sha256": "e430affeca4525851629dbcbd0fd98600353cab2c80a4ebd0ab08e8b4769bd5e",
       "segments": 3,
-      "notes": "Satellite pass prediction + tracking (needs satellite table + observer position)."
+      "notes": "Satellite pass prediction + tracking (needs satellite table + observer position).",
+      "icon": "satellite",
+      "blurb": "Amateur satellite helper in three parts: a satellite list, pass prediction, and a tracking view with Doppler-aware tuning. It needs its satellite table loaded into the app-data region and an observer position in settings before it can predict passes \u2014 until then it opens to an empty list.",
+      "usage": "After the table and observer position are set, pick a satellite to see its next passes and open the track view during a pass.",
+      "screenshots": [
+        "appimg/satellite-1.png"
+      ]
     },
     {
       "id": "scanqt",
@@ -71,7 +142,13 @@
       "size": 1036,
       "sha256": "9d101d4ea4b4554384c3f47dc2c71389db6b3d106eced45fe26d2e5bab6697bf",
       "segments": 1,
-      "notes": "CTCSS/DCS tone hunter on the current channel."
+      "notes": "CTCSS/DCS tone hunter on the current channel.",
+      "icon": "scanqt",
+      "blurb": "Tone hunter: sits on the current channel and works out which CTCSS/DCS tone an incoming signal is using, so you can program the right tone for a repeater or simplex contact.",
+      "usage": "Tune to an active signal, open SCANQT, and let it test tones while the other station transmits.",
+      "screenshots": [
+        "appimg/scanqt-1.png"
+      ]
     },
     {
       "id": "search",
@@ -80,7 +157,13 @@
       "size": 2424,
       "sha256": "ea8cd069ca3c8c1816f1b29a797e77026329f1e74675e19d5854800a5d171e5d",
       "segments": 1,
-      "notes": "Frequency search / found-frequency list."
+      "notes": "Frequency search / found-frequency list.",
+      "icon": "search",
+      "blurb": "Frequency search: sweeps a range and collects the frequencies where the squelch opens into a found list you can step through and tune.",
+      "usage": "Start a search over the range you care about, then step through the found frequencies.",
+      "screenshots": [
+        "appimg/search-1.png"
+      ]
     },
     {
       "id": "settings",
@@ -89,7 +172,14 @@
       "size": 20064,
       "sha256": "56241c25308bfa09abd49fd28b706551cf8fb85d2510324e5bd560d7d3a469a7",
       "segments": 3,
-      "notes": "On-radio settings editor."
+      "notes": "On-radio settings editor.",
+      "icon": "settings",
+      "blurb": "On-radio editor for the firmware's settings, in three groups (menu, radio, system): squelch, band lock, backlight, side-key functions, boot text and more \u2014 the same 168-byte settings record the web CPS reads and writes.",
+      "usage": "Pick a group, scroll to a setting, and edit it in place; changes are written to the radio's settings storage.",
+      "screenshots": [
+        "appimg/settings-1.png",
+        "appimg/settings-2.png"
+      ]
     },
     {
       "id": "spectrum",
@@ -98,7 +188,13 @@
       "size": 6200,
       "sha256": "ff8d85aa9f9fb36512925f59ba4a62e265723928f1a6e1031c66c9d0ea0d9063",
       "segments": 1,
-      "notes": "Spectrum sweep display."
+      "notes": "Spectrum sweep display.",
+      "icon": "spectrum",
+      "blurb": "Live spectrum sweep around the current frequency: samples signal strength across a span and draws it as a bar graph, so you can see band activity, find busy spots, and spot noise at a glance.",
+      "usage": "Tune near the band you care about, open SPECTRUM, and watch the sweep; stronger signals draw taller bars.",
+      "screenshots": [
+        "appimg/spectrum-1.png"
+      ]
     },
     {
       "id": "wxpanel",
@@ -107,7 +203,13 @@
       "size": 5740,
       "sha256": "70f52eb5c0a4d82596d94fc204f2b209bf4730cdd7aa10a7668b994aeb90eb96",
       "segments": 1,
-      "notes": "NOAA weather panel: 7 WX channels with per-channel RSSI + auto-strongest."
+      "notes": "NOAA weather panel: 7 WX channels with per-channel RSSI + auto-strongest.",
+      "icon": "wxpanel",
+      "blurb": "NOAA weather radio panel: lists all seven WX channels (162.400\u2013162.550 MHz) with a measured signal strength for each, and automatically tunes the strongest one \u2014 handy for checking which weather transmitter covers your spot.",
+      "usage": "Open WXPANEL and it samples all seven channels and lands on the strongest; use UP/DOWN + MENU to tune manually, * re-runs the auto-scan.",
+      "screenshots": [
+        "appimg/wxpanel-1.png"
+      ]
     }
   ]
 }

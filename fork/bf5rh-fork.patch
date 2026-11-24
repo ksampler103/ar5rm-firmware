@@ -1,62 +1,27 @@
-diff --git a/src/app/mod.rs b/src/app/mod.rs
-index 2da991f..4fbefb3 100644
---- a/src/app/mod.rs
-+++ b/src/app/mod.rs
-@@ -164,6 +164,11 @@ pub struct App<'a> {
+diff --git a/Cargo.toml b/Cargo.toml
+index 3f71f3e..f6d2058 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -12,7 +12,16 @@ test = false
+ bench = false
  
-     channel_display_mode: ChannelDisplayMode,
+ [features]
+-default = []
++# Standby theme selection is COMPILE-TIME (fork 1 rework, 2026-11-24):
++# exactly one theme-* feature per build; each web-flasher firmware
++# variant carries a single standby renderer. Switching themes on a
++# radio = flashing a different variant. Default keeps a plain
++# `cargo build --release` working (APX Pro).
++default = ["theme-apx"]
++theme-apx = []
++theme-clean = []
++theme-dense = []
++theme-minimal = []
  
-+    /// Standby UI theme (fork feature): cached copy of the THM1 block in
-+    /// app-data flash, read at startup and refreshed whenever standby is
-+    /// entered. See `crate::ui::theme`.
-+    theme: u8,
-+
-     power_save: bool,
-     ps_asleep: bool,
-     ps_idle_ticks: u16,
-@@ -202,6 +207,11 @@ impl<'a> App<'a> {
-             .load_settings()
-             .unwrap_or(flash_map::Settings::DEFAULT);
-         let battery_cal = storage.read_battery_calibration();
-+        let theme = {
-+            let mut block = [0u8; 6];
-+            storage.read_raw(crate::ui::theme::THEME_DATA_ADDR, &mut block);
-+            crate::ui::theme::parse_theme_block(&block)
-+        };
- 
-         let mut sides = [
-             side::Side {
-@@ -298,6 +308,7 @@ impl<'a> App<'a> {
-             mode: Mode::Standby,
-             sides,
-             settings,
-+            theme,
-             launcher_index: 0,
-             master: 0,
-             watching: 0,
-@@ -363,6 +374,20 @@ impl<'a> App<'a> {
-         ));
-     }
- 
-+    /// Currently selected standby theme id (fork feature).
-+    pub fn theme(&self) -> u8 {
-+        self.theme
-+    }
-+
-+    /// Re-read the theme block from app-data flash. Called when standby
-+    /// is entered so a pick made in the THEMES app applies immediately.
-+    pub fn refresh_theme(&mut self) {
-+        let mut block = [0u8; 6];
-+        self.storage
-+            .read_raw(crate::ui::theme::THEME_DATA_ADDR, &mut block);
-+        self.theme = crate::ui::theme::parse_theme_block(&block);
-+    }
-+
-     // UTC wall clock
-     pub fn utc_secs(&self) -> u32 {
-         self.utc_secs
+ [dependencies]
+ cortex-m = "0.7"
 diff --git a/src/ui/mod.rs b/src/ui/mod.rs
-index cc8f7cd..45e0e17 100644
+index cc8f7cd..5fbe727 100644
 --- a/src/ui/mod.rs
 +++ b/src/ui/mod.rs
 @@ -1,4 +1,5 @@
@@ -65,37 +30,66 @@ index cc8f7cd..45e0e17 100644
  pub(crate) mod cps;
  mod icons;
  mod launcher;
-@@ -113,6 +114,11 @@ pub fn draw(
-         state.standby = standby::Cache::new();
-         state.list = list::Cache::new();
-         state.scan = scan::Cache::new();
-+        if mode == app::Mode::Standby {
-+            // A theme picked in the THEMES app while we were away must be
-+            // live on return; the block lives in app-writable flash.
-+            app.refresh_theme();
-+        }
+@@ -43,17 +44,32 @@ impl<const N: usize> TextBuf<N> {
      }
-     state.last_mode = Some(mode);
-     match mode {
+ 
+     pub fn as_str(&self) -> &str {
+-        core::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
++        textbuf_as_str(&self.buf, self.len)
+     }
+ }
+ 
++/// Non-generic core of `TextBuf::as_str`, shared by every capacity so
++/// the body exists exactly once in the binary (fork slimming — the
++/// per-`N` monomorphizations cost ~200 B across the sizes in use).
++#[inline(never)]
++fn textbuf_as_str(buf: &[u8], len: usize) -> &str {
++    core::str::from_utf8(&buf[..len]).unwrap_or("")
++}
++
++/// Non-generic core of `TextBuf::write_str` (same reasoning as above;
++/// the per-`N` copies cost ~450 B).
++#[inline(never)]
++fn textbuf_push(buf: &mut [u8], len: &mut usize, s: &str) {
++    let bytes = s.as_bytes();
++    let space = buf.len() - *len;
++    let n = bytes.len().min(space);
++    buf[*len..*len + n].copy_from_slice(&bytes[..n]);
++    *len += n;
++}
++
+ impl<const N: usize> core::fmt::Write for TextBuf<N> {
+     fn write_str(&mut self, s: &str) -> core::fmt::Result {
+-        let bytes = s.as_bytes();
+-        let space = N - self.len;
+-        let n = bytes.len().min(space);
+-        self.buf[self.len..self.len + n].copy_from_slice(&bytes[..n]);
+-        self.len += n;
++        textbuf_push(&mut self.buf, &mut self.len, s);
+         Ok(())
+     }
+ }
 diff --git a/src/ui/standby.rs b/src/ui/standby.rs
-index 726a3e1..0eb716b 100644
+index 726a3e1..df51026 100644
 --- a/src/ui/standby.rs
 +++ b/src/ui/standby.rs
-@@ -1,3 +1,13 @@
+@@ -1,3 +1,15 @@
 +//! Standby screen, themed (fork feature — see `src/ui/theme.rs`).
 +//!
-+//! Four layouts share one snapshot/cache core: APX Pro (0, the upstream
-+//! geometry with an amber focus border), Clean Modern (1, cards),
-+//! Data Dense (2, text grid), Minimal Dark (3, single frequency).
-+//! Structural changes trigger the active layout's full redraw; battery,
-+//! status, RX and meter dynamics update in place per layout, exactly as
-+//! the upstream single-layout code did.
++//! Exactly ONE layout is compiled into each firmware variant, selected
++//! by a cargo feature: APX Pro (`theme-apx`, the upstream geometry with
++//! an amber focus border), Clean Modern (`theme-clean`, cards),
++//! Data Dense (`theme-dense`, text grid), Minimal Dark
++//! (`theme-minimal`, single frequency). All layouts share the
++//! snapshot/cache core below. Structural changes trigger the compiled
++//! layout's full redraw; battery, status, RX and meter dynamics update
++//! in place per layout, exactly as the upstream single-layout code did.
 +
 +use super::theme::{self, Palette};
  use super::{icons, TextBuf, SCREEN_H, SCREEN_W};
  use crate::app::{self, ChannelDisplayMode};
  use crate::device::radio::{Modulation, Power, SubAudio};
-@@ -11,17 +21,6 @@ use embedded_graphics::prelude::*;
+@@ -11,17 +23,6 @@ use embedded_graphics::prelude::*;
  use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
  use embedded_graphics::text::Text;
  
@@ -113,7 +107,7 @@ index 726a3e1..0eb716b 100644
  const MARGIN: i32 = 6;
  const RIGHT_MARGIN: i32 = 6;
  const STRIPE_W: i32 = 3;
-@@ -63,9 +62,10 @@ pub(super) struct Snapshot {
+@@ -63,9 +64,10 @@ pub(super) struct Snapshot {
  
  pub(super) struct Cache {
      structural: Option<Snapshot>,
@@ -125,7 +119,7 @@ index 726a3e1..0eb716b 100644
      meter: Option<MeterState>,
  }
  
-@@ -73,9 +73,10 @@ impl Cache {
+@@ -73,9 +75,10 @@ impl Cache {
      pub fn new() -> Self {
          Cache {
              structural: None,
@@ -137,7 +131,7 @@ index 726a3e1..0eb716b 100644
              meter: None,
          }
      }
-@@ -105,6 +106,19 @@ struct MeterState {
+@@ -105,6 +108,19 @@ struct MeterState {
      side: Option<u8>,
  }
  
@@ -157,7 +151,7 @@ index 726a3e1..0eb716b 100644
  #[derive(Clone, Copy, PartialEq)]
  struct SideSnapshot {
      freq_hz: u32,
-@@ -125,16 +139,6 @@ impl Snapshot {
+@@ -125,16 +141,6 @@ impl Snapshot {
          self.tx_prohibited || self.no_channels_notice
      }
  
@@ -174,7 +168,7 @@ index 726a3e1..0eb716b 100644
      fn capture(app: &app::App) -> Self {
          let is_transmitting = app.is_transmitting();
          let master_index = app.master_index();
-@@ -177,6 +181,61 @@ impl Snapshot {
+@@ -177,6 +183,61 @@ impl Snapshot {
      }
  }
  
@@ -236,7 +230,7 @@ index 726a3e1..0eb716b 100644
  fn fill<D>(lcd: &mut D, x: i32, y: i32, w: i32, h: i32, color: Rgb565)
  where
      D: DrawTarget<Color = Rgb565>,
-@@ -190,6 +249,7 @@ where
+@@ -190,6 +251,7 @@ where
          .ok();
  }
  
@@ -244,7 +238,7 @@ index 726a3e1..0eb716b 100644
  fn text<D>(
      lcd: &mut D,
      s: &str,
-@@ -205,6 +265,7 @@ fn text<D>(
+@@ -205,6 +267,7 @@ fn text<D>(
          .ok();
  }
  
@@ -252,7 +246,7 @@ index 726a3e1..0eb716b 100644
  fn text_right<D>(
      lcd: &mut D,
      s: &str,
-@@ -218,6 +279,20 @@ fn text_right<D>(
+@@ -218,6 +281,20 @@ fn text_right<D>(
      text(lcd, s, font, SCREEN_W - RIGHT_MARGIN - w, baseline, color);
  }
  
@@ -273,7 +267,7 @@ index 726a3e1..0eb716b 100644
  fn band_top(i: usize) -> i32 {
      if i == 0 {
          BAND_TOP0
-@@ -226,159 +301,95 @@ fn band_top(i: usize) -> i32 {
+@@ -226,159 +303,95 @@ fn band_top(i: usize) -> i32 {
      }
  }
  
@@ -510,7 +504,7 @@ index 726a3e1..0eb716b 100644
  }
  
  fn draw_overlay<D>(lcd: &mut D, label: &str, color: Rgb565)
-@@ -388,7 +399,7 @@ where
+@@ -388,7 +401,7 @@ where
      let width = label.len() as i32 * SMALL_W + 16;
      let x = (SCREEN_W - width) / 2;
      let y = SCREEN_H / 2 - 11;
@@ -519,7 +513,7 @@ index 726a3e1..0eb716b 100644
      icons::draw_outline(
          lcd,
          Point::new(x, y),
-@@ -405,191 +416,67 @@ where
+@@ -405,191 +418,76 @@ where
      );
  }
  
@@ -659,10 +653,7 @@ index 726a3e1..0eb716b 100644
 -    };
 -    fill(lcd, 0, band_top(i), STRIPE_W, BAND_HEIGHT, color);
 -}
-+    let snap = Snapshot::capture(app);
-+    let theme = app.theme();
-+    let pal = theme::palette(theme);
- 
+-
 -fn draw_rx_status<D>(
 -    lcd: &mut D,
 -    app: &app::App,
@@ -676,6 +667,14 @@ index 726a3e1..0eb716b 100644
 -    let is_master = i == app.master_index();
 -    let is_watching = i == app.watching_index();
 -    let transmitting_here = app.is_transmitting() && is_master;
++    let snap = Snapshot::capture(app);
++    // The theme is a compile-time constant of this firmware variant
++    // (see `src/ui/theme.rs`); `cache.theme` therefore never changes
++    // after the first frame, but the comparison is kept so the cache
++    // logic stays identical across variants.
++    let theme = theme::ACTIVE_THEME;
++    let pal = theme::active_palette();
++
 +    let structural_changed =
 +        cache.theme != theme || cache.structural.as_ref() != Some(&snap);
 +    let overlay_active = snap.overlay_active();
@@ -687,20 +686,23 @@ index 726a3e1..0eb716b 100644
 -            RxStatusText::Rx
 -        } else {
 -            RxStatusText::None
+-        }
+-    } else if app.last_signal_side() == Some(i) {
+-        RxStatusText::LastSignal
 +    // While an overlay notice is up and nothing changed, the painted
 +    // frame stands (upstream behaviour); dynamics below still run.
-+    // THEME_MINIMAL (3) is reserved but not built into this firmware
-+    // (flash budget - see fork/FORK.md); the id renders as APX Pro.
++    // Exactly one of the cfg-gated calls below exists per variant.
 +    let did_full = if overlay_active && !structural_changed {
 +        false
 +    } else if structural_changed {
-+        match theme {
-+            theme::THEME_CLEAN => clean_full(lcd, app, &snap, pal),
-+            theme::THEME_DENSE => dense_full(lcd, app, &snap, pal),
-+            _ => apx_full(lcd, app, &snap, pal),
-         }
--    } else if app.last_signal_side() == Some(i) {
--        RxStatusText::LastSignal
++        #[cfg(feature = "theme-apx")]
++        apx_full(lcd, app, &snap, pal);
++        #[cfg(feature = "theme-clean")]
++        clean_full(lcd, app, &snap, pal);
++        #[cfg(feature = "theme-dense")]
++        dense_full(lcd, app, &snap, pal);
++        #[cfg(feature = "theme-minimal")]
++        minimal_full(lcd, app, &snap, pal);
 +        true
      } else {
 -        RxStatusText::None
@@ -712,9 +714,7 @@ index 726a3e1..0eb716b 100644
 -        return;
 -    }
 -    *last = Some(state);
-+    cache.structural = Some(snap);
-+    cache.theme = theme;
- 
+-
 -    fill(lcd, CONTENT_X, top, LABEL_X - CONTENT_X, ROW1_H, BG);
 -    let (label, color) = match text_kind {
 -        RxStatusText::Tx => ("TX", ALERT),
@@ -730,11 +730,17 @@ index 726a3e1..0eb716b 100644
 -        top + FONT_6X10.baseline as i32 + 2,
 -        color,
 -    );
-+    match theme {
-+        theme::THEME_CLEAN => clean_dyn(lcd, app, pal, cache, did_full),
-+        theme::THEME_DENSE => dense_dyn(lcd, app, pal, cache, did_full),
-+        _ => apx_dyn(lcd, app, pal, cache, did_full),
-+    }
++    cache.structural = Some(snap);
++    cache.theme = theme;
++
++    #[cfg(feature = "theme-apx")]
++    apx_dyn(lcd, app, pal, cache, did_full);
++    #[cfg(feature = "theme-clean")]
++    clean_dyn(lcd, app, pal, cache, did_full);
++    #[cfg(feature = "theme-dense")]
++    dense_dyn(lcd, app, pal, cache, did_full);
++    #[cfg(feature = "theme-minimal")]
++    minimal_dyn(lcd, app, pal, cache, did_full);
  }
  
 -fn draw_row1<D>(lcd: &mut D, app: &app::App, i: usize, top: i32)
@@ -750,7 +756,7 @@ index 726a3e1..0eb716b 100644
      let is_master = i == app.master_index();
      let baseline = top + FONT_6X10.baseline as i32 + 2;
  
-@@ -597,7 +484,7 @@ where
+@@ -597,7 +495,7 @@ where
          return;
      }
      if is_master && app.channel_input_len() > 0 {
@@ -759,7 +765,7 @@ index 726a3e1..0eb716b 100644
          return;
      }
  
-@@ -613,7 +500,7 @@ where
+@@ -613,7 +511,7 @@ where
          &FONT_6X10,
          LABEL_X,
          baseline,
@@ -768,7 +774,7 @@ index 726a3e1..0eb716b 100644
      );
  
      if app.channel_display_mode() == ChannelDisplayMode::Frequency {
-@@ -625,25 +512,26 @@ where
+@@ -625,25 +523,26 @@ where
                  name,
                  &FONT_5X8,
                  top + FONT_5X8.baseline as i32 + 3,
@@ -799,7 +805,7 @@ index 726a3e1..0eb716b 100644
  
      let freq_hz = if transmitting_here {
          app.side_tx_freq_hz(i)
-@@ -652,9 +540,9 @@ where
+@@ -652,9 +551,9 @@ where
      };
  
      if is_master && app.freq_input_len() > 0 {
@@ -811,7 +817,7 @@ index 726a3e1..0eb716b 100644
      } else {
          match app.channel_display_mode() {
              ChannelDisplayMode::NameFreq if has_name => {
-@@ -662,13 +550,7 @@ where
+@@ -662,13 +561,7 @@ where
                  let name_y = y + FONT_6X10.baseline as i32 + 1;
                  text_right(lcd, shown, &FONT_6X10, name_y, fg);
                  let mut freq_line: TextBuf<12> = TextBuf::new();
@@ -826,7 +832,7 @@ index 726a3e1..0eb716b 100644
                  text_right(
                      lcd,
                      freq_line.as_str(),
-@@ -686,17 +568,25 @@ where
+@@ -686,17 +579,25 @@ where
      }
  }
  
@@ -855,7 +861,7 @@ index 726a3e1..0eb716b 100644
  pub(crate) fn draw_frequency<D>(
      lcd: &mut D,
      freq_hz: u32,
-@@ -704,9 +594,23 @@ pub(crate) fn draw_frequency<D>(
+@@ -704,9 +605,23 @@ pub(crate) fn draw_frequency<D>(
      color: Rgb565,
  ) where
      D: DrawTarget<Color = Rgb565>,
@@ -880,7 +886,7 @@ index 726a3e1..0eb716b 100644
  
      let mut head: TextBuf<8> = TextBuf::new();
      write!(head, "{:3}.{:03}", mhz, frac / 100).ok();
-@@ -714,9 +618,6 @@ pub(crate) fn draw_frequency<D>(
+@@ -714,9 +629,6 @@ pub(crate) fn draw_frequency<D>(
      write!(tail, "{:02}", frac % 100).ok();
  
      let head_w = head.as_str().len() as i32 * BIG_W;
@@ -890,7 +896,7 @@ index 726a3e1..0eb716b 100644
      text(lcd, head.as_str(), &FONT_9X18, x, baseline_y, color);
      text(
          lcd,
-@@ -728,23 +629,25 @@ pub(crate) fn draw_frequency<D>(
+@@ -728,23 +640,25 @@ pub(crate) fn draw_frequency<D>(
      );
  }
  
@@ -929,7 +935,7 @@ index 726a3e1..0eb716b 100644
      let w = buf.as_str().len() as i32 * BIG_W;
      text(
          lcd,
-@@ -752,16 +655,28 @@ where
+@@ -752,16 +666,28 @@ where
          &FONT_9X18,
          SCREEN_W - RIGHT_MARGIN - w,
          baseline_y,
@@ -964,7 +970,7 @@ index 726a3e1..0eb716b 100644
      write!(buf, "M").ok();
      for pos in 0..3usize {
          if pos + len < 3 {
-@@ -770,16 +685,25 @@ where
+@@ -770,16 +696,25 @@ where
              write!(buf, "{}", app.freq_input_digit(pos + len - 3) as u32).ok();
          }
      }
@@ -994,7 +1000,7 @@ index 726a3e1..0eb716b 100644
      write!(buf, ">").ok();
      for pos in 0..cap {
          if pos < len {
-@@ -788,9 +712,22 @@ where
+@@ -788,9 +723,22 @@ where
              write!(buf, "-").ok();
          }
      }
@@ -1018,7 +1024,7 @@ index 726a3e1..0eb716b 100644
  fn tone_mode_label(tx: SubAudio, rx: SubAudio) -> &'static str {
      match (tx, rx) {
          (SubAudio::None, SubAudio::None) => "",
-@@ -812,16 +749,20 @@ fn tone_mode_label(tx: SubAudio, rx: SubAudio) -> &'static str {
+@@ -812,16 +760,20 @@ fn tone_mode_label(tx: SubAudio, rx: SubAudio) -> &'static str {
      }
  }
  
@@ -1043,7 +1049,7 @@ index 726a3e1..0eb716b 100644
          Modulation::Cw => "CW",
          Modulation::Cwf => "CWF",
      };
-@@ -841,15 +782,15 @@ where
+@@ -841,15 +793,15 @@ where
      };
  
      let fields = [
@@ -1065,7 +1071,7 @@ index 726a3e1..0eb716b 100644
      ];
  
      let mut x = MARGIN;
-@@ -872,7 +813,7 @@ fn dtmf_char(v: u8) -> char {
+@@ -872,7 +824,7 @@ fn dtmf_char(v: u8) -> char {
      }
  }
  
@@ -1074,7 +1080,7 @@ index 726a3e1..0eb716b 100644
  
  const SEG_PITCH: i32 = 5;
  const SEG_W: i32 = 4;
-@@ -883,28 +824,29 @@ const S_METER_BAR_X: i32 =
+@@ -883,28 +835,29 @@ const S_METER_BAR_X: i32 =
      SCREEN_W - RIGHT_MARGIN - S_METER_SEGS as i32 * SEG_PITCH + 1;
  const MIC_BAR_X: i32 = MARGIN + 22;
  
@@ -1117,7 +1123,7 @@ index 726a3e1..0eb716b 100644
  fn draw_bar<D>(
      lcd: &mut D,
      x: i32,
-@@ -912,12 +854,13 @@ fn draw_bar<D>(
+@@ -912,12 +865,13 @@ fn draw_bar<D>(
      level: u8,
      total: u8,
      fixed: Option<Rgb565>,
@@ -1132,7 +1138,7 @@ index 726a3e1..0eb716b 100644
          } else {
              let h = (i as i32 + 1).min(SEG_MAX_H);
              fill(
-@@ -926,15 +869,17 @@ fn draw_bar<D>(
+@@ -926,15 +880,17 @@ fn draw_bar<D>(
                  base_y - h + 1,
                  SEG_W,
                  h,
@@ -1152,13 +1158,14 @@ index 726a3e1..0eb716b 100644
              .min(MIC_BAR_SEGS as u16) as u8;
          return MeterState {
              tx: true,
-@@ -983,9 +928,211 @@ fn meter_state(app: &app::App) -> MeterState {
+@@ -983,9 +939,213 @@ fn meter_state(app: &app::App) -> MeterState {
      }
  }
  
 -fn draw_meter<D>(
 +// ---- theme 0: APX Pro ----
 +
++#[cfg(feature = "theme-apx")]
 +#[inline(never)]
 +fn apx_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
 +where
@@ -1196,10 +1203,11 @@ index 726a3e1..0eb716b 100644
 +
 +const FLAGS_W: i32 = 100;
 +
++#[cfg(feature = "theme-apx")]
 +#[inline(never)]
 +fn apx_dyn<D>(
-+    lcd: &mut D,
-+    app: &app::App,
+     lcd: &mut D,
+     app: &app::App,
 +    pal: Palette,
 +    cache: &mut Cache,
 +    force: bool,
@@ -1279,8 +1287,8 @@ index 726a3e1..0eb716b 100644
 +}
 +
 +fn apx_battery<D>(
-     lcd: &mut D,
-     app: &app::App,
++    lcd: &mut D,
++    app: &app::App,
 +    pal: Palette,
 +    last: &mut Option<(u8, u16)>,
 +    force: bool,
@@ -1365,7 +1373,7 @@ index 726a3e1..0eb716b 100644
      last: &mut Option<MeterState>,
      force: bool,
  ) where
-@@ -1015,15 +1162,15 @@ fn draw_meter<D>(
+@@ -1015,15 +1175,15 @@ fn draw_meter<D>(
              .map_or(true, |p| (p.level, p.live) != (state.level, state.live));
  
      if mode_changed {
@@ -1384,7 +1392,7 @@ index 726a3e1..0eb716b 100644
          }
          if level_changed {
              draw_bar(
-@@ -1032,14 +1179,15 @@ fn draw_meter<D>(
+@@ -1032,14 +1192,15 @@ fn draw_meter<D>(
                  base_y,
                  state.level,
                  MIC_BAR_SEGS,
@@ -1402,7 +1410,7 @@ index 726a3e1..0eb716b 100644
          let mut line: TextBuf<20> = TextBuf::new();
          if !state.live {
              line.write_str("LAST ").ok();
-@@ -1068,7 +1216,7 @@ fn draw_meter<D>(
+@@ -1068,7 +1229,7 @@ fn draw_meter<D>(
              &FONT_5X8,
              MARGIN,
              baseline,
@@ -1411,7 +1419,7 @@ index 726a3e1..0eb716b 100644
          );
      }
      if level_changed {
-@@ -1080,12 +1228,580 @@ fn draw_meter<D>(
+@@ -1080,12 +1241,738 @@ fn draw_meter<D>(
                  state.level,
                  S_METER_SEGS,
                  None,
@@ -1474,6 +1482,7 @@ index 726a3e1..0eb716b 100644
 +    .ok();
 +}
 +
++#[cfg(feature = "theme-clean")]
 +#[inline(never)]
 +fn clean_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
 +where
@@ -1568,7 +1577,7 @@ index 726a3e1..0eb716b 100644
 +                let mut f: TextBuf<12> = TextBuf::new();
 +                fmt_freq5(snap.sides[i].freq_hz, &mut f);
 +                text(lcd, f.as_str(), &FONT_6X10, x, freq_base, pal.fg);
-+            }
+             }
 +            _ => draw_frequency_at(lcd, snap.sides[i].freq_hz, x, freq_base, pal.fg),
 +        }
 +    }
@@ -1607,6 +1616,7 @@ index 726a3e1..0eb716b 100644
 +    }
 +}
 +
++#[cfg(feature = "theme-clean")]
 +#[inline(never)]
 +fn clean_dyn<D>(
 +    lcd: &mut D,
@@ -1656,9 +1666,9 @@ index 726a3e1..0eb716b 100644
 +            }
 +            if st.key_locked && x + 8 <= 97 {
 +                icons::draw_padlock(lcd, x, 4, pal.amber);
-             }
-         }
-     }
++            }
++        }
++    }
 +
 +    // battery, pill right region
 +    let bstate = (app.battery_bars(), app.battery_voltage_cv());
@@ -1759,6 +1769,7 @@ index 726a3e1..0eb716b 100644
 +    side_label(app, i, out);
 +}
 +
++#[cfg(feature = "theme-dense")]
 +#[inline(never)]
 +fn dense_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
 +where
@@ -1898,6 +1909,7 @@ index 726a3e1..0eb716b 100644
 +    draw_overlay_for(lcd, app, pal);
 +}
 +
++#[cfg(feature = "theme-dense")]
 +#[inline(never)]
 +fn dense_dyn<D>(
 +    lcd: &mut D,
@@ -1993,73 +2005,222 @@ index 726a3e1..0eb716b 100644
 +            text(lcd, line.as_str(), &FONT_5X8, 3, 125, pal.dim);
 +        }
 +    }
++}
++
++// ---- theme 3: Minimal Dark ----
++//
++// Per the approved mockup (concept4-minimal-dark.png): black screen,
++// battery icon top-left, dim clock top-right, one huge frequency in
++// the middle with the channel name under it, a hairline, and the
++// other band as a single dim line at the bottom. No meter, no flags
++// row. The frequency itself carries the RX/TX state by colour
++// (white idle, green RX, amber last-signal, red TX).
++
++#[cfg(feature = "theme-minimal")]
++const MIN_FREQ_BASELINE: i32 = 76;
++#[cfg(feature = "theme-minimal")]
++const MIN_NAME_BASELINE: i32 = 94;
++#[cfg(feature = "theme-minimal")]
++const MIN_RULE_Y: i32 = 104;
++#[cfg(feature = "theme-minimal")]
++const MIN_SLAVE_BASELINE: i32 = 122;
++
++#[cfg(feature = "theme-minimal")]
++fn minimal_freq_color(kind: RxStatusText, pal: Palette) -> Rgb565 {
++    match kind {
++        RxStatusText::Tx => pal.alert,
++        RxStatusText::Rx => pal.green,
++        RxStatusText::LastSignal => pal.amber,
++        RxStatusText::None => pal.fg,
++    }
++}
++
++#[cfg(feature = "theme-minimal")]
++#[inline(never)]
++fn minimal_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
++where
++    D: DrawTarget<Color = Rgb565>,
++{
++    fill(lcd, 0, 0, SCREEN_W, SCREEN_H, pal.bg);
++    let master = snap.master_index;
++    let slave = 1 - master;
++
++    // Centre: the input in progress, or the huge frequency.
++    if snap.freq_input_len > 0 {
++        let mut buf: TextBuf<8> = TextBuf::new();
++        freq_input_text(app, &mut buf);
++        text_centered(lcd, buf.as_str(), &FONT_9X18, MIN_FREQ_BASELINE, pal.amber);
++    } else if snap.channel_input_len > 0 {
++        let mut buf: TextBuf<8> = TextBuf::new();
++        channel_input_text(app, &mut buf);
++        text_centered(lcd, buf.as_str(), &FONT_9X18, MIN_FREQ_BASELINE, pal.amber);
++    } else if snap.dtmf_dial_active {
++        let mut buf: TextBuf<17> = TextBuf::new();
++        dtmf_dial_text(app, &mut buf);
++        text_centered(lcd, buf.as_str(), &FONT_6X10, MIN_FREQ_BASELINE, pal.amber);
++    } else {
++        let kind = rx_status_kind(app, master);
++        draw_frequency_centered(
++            lcd,
++            snap.sides[master].freq_hz,
++            MIN_FREQ_BASELINE,
++            minimal_freq_color(kind, pal),
++        );
++    }
++
++    // Channel name under the frequency.
++    let mut name: TextBuf<16> = TextBuf::new();
++    side_label(app, master, &mut name);
++    text_centered(lcd, name.as_str(), &FONT_6X10, MIN_NAME_BASELINE, pal.slave);
++
++    // Hairline, then the other band as one dim line: "162.4750 - NOAA".
++    fill(lcd, (SCREEN_W - 84) / 2, MIN_RULE_Y, 84, 1, pal.hair);
++    let mut line: TextBuf<28> = TextBuf::new();
++    fmt_freq4(snap.sides[slave].freq_hz, &mut line);
++    line.write_str(" - ").ok();
++    side_label(app, slave, &mut line);
++    text_centered(lcd, line.as_str(), &FONT_6X10, MIN_SLAVE_BASELINE, pal.dim);
++
++    draw_overlay_for(lcd, app, pal);
++}
++
++#[cfg(feature = "theme-minimal")]
++#[inline(never)]
++fn minimal_dyn<D>(
++    lcd: &mut D,
++    app: &app::App,
++    pal: Palette,
++    cache: &mut Cache,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    // Battery icon, top-left (no volts text — the mockup is icon-only).
++    let batt = (app.battery_bars(), app.battery_voltage_cv());
++    if force || cache.battery != Some(batt) {
++        cache.battery = Some(batt);
++        let charge = match batt.0 {
++            0 | 1 => pal.alert,
++            2 => pal.amber,
++            _ => pal.green,
++        };
++        fill(lcd, 0, 0, icons::BATTERY_W + 8, STATUS_HEIGHT, pal.bg);
++        icons::draw_battery(lcd, 4, 1, batt.0, pal.fg, charge);
++    }
++
++    // Clock / TX timer cluster, top-right.
++    let st = status_state(app);
++    if force || cache.status != Some(st) {
++        cache.status = Some(st);
++        fill(lcd, 88, 0, SCREEN_W - 88, STATUS_HEIGHT, pal.bg);
++        let baseline = FONT_6X10.baseline as i32 + 2;
++        if st.transmitting {
++            let mut buf: TextBuf<8> = TextBuf::new();
++            fmt_timer(st.tx_secs.unwrap_or(0), &mut buf);
++            text_right(lcd, buf.as_str(), &FONT_6X10, baseline, pal.alert);
++        } else if let Some(min) = st.clock_min {
++            let mut clock: TextBuf<8> = TextBuf::new();
++            fmt_clock24(min, &mut clock);
++            text_right(lcd, clock.as_str(), &FONT_6X10, baseline, pal.dim);
++            if st.key_locked {
++                let clock_w = 5 * SMALL_W;
++                icons::draw_padlock(
++                    lcd,
++                    SCREEN_W - RIGHT_MARGIN - clock_w - 12,
++                    2,
++                    pal.amber,
++                );
++            }
++        } else if st.key_locked {
++            icons::draw_padlock(lcd, SCREEN_W - RIGHT_MARGIN - 8, 2, pal.amber);
++        }
++    }
++
++    // Frequency colour follows the master band's RX state. While an
++    // input is being typed the centre shows the input instead, and
++    // structural redraws own it — don't paint over it.
++    let master = app.master_index();
++    let kind = rx_status_kind(app, master);
++    let state = RxStatusState { text: kind };
++    if force || cache.rx_status[master] != Some(state) {
++        cache.rx_status[master] = Some(state);
++        if app.freq_input_len() == 0
++            && app.channel_input_len() == 0
++            && !app.dtmf_dial_active()
++        {
++            fill(lcd, 0, MIN_FREQ_BASELINE - 22, SCREEN_W, 26, pal.bg);
++            // Mirror Snapshot::capture: while transmitting, the centre
++            // shows the TX frequency, not the RX one.
++            let freq = if app.is_transmitting() {
++                app.side_tx_freq_hz(master)
++            } else {
++                app.side_freq_hz(master)
++            };
++            draw_frequency_centered(lcd, freq, MIN_FREQ_BASELINE, minimal_freq_color(kind, pal));
+         }
+     }
  }
 diff --git a/src/ui/theme.rs b/src/ui/theme.rs
 new file mode 100644
-index 0000000..bfbc3bf
+index 0000000..676b410
 --- /dev/null
 +++ b/src/ui/theme.rs
-@@ -0,0 +1,136 @@
-+//! Standby theme system (fork feature — see `fork/FORK.md` in the
+@@ -0,0 +1,137 @@
++//! Standby themes (fork feature — see `fork/FORK.md` in the
 +//! ar5rm-firmware repo).
 +//!
-+//! The selected theme is deliberately NOT a field of the Settings record:
-+//! that record is byte-full and CPS-compatible, so it stays untouched.
-+//! Instead the theme lives in a small block in the app-private data
-+//! region of the external NOR flash. Overlay apps may write anywhere at
-+//! or above `OVERLAY_APP_ADDR` (0x14C000); the THEMES app writes the
-+//! block, the core reads it at boot and again whenever standby is
-+//! entered, so a theme picked in the app is live on return to standby.
++//! The theme is selected at COMPILE TIME, one cargo feature per
++//! firmware variant (`theme-apx` / `theme-clean` / `theme-dense` /
++//! `theme-minimal`). Each web-flasher firmware variant carries exactly
++//! one standby renderer; switching themes on a radio means flashing a
++//! different variant, which is also what keeps every variant inside
++//! the 60K application limit (the all-themes-in-one build measured
++//! 64,744 B and did not fit).
 +//!
-+//! App-data region map (4K sectors, see APPS.md):
-+//!   0x18C000..0x191000  satellite table (upstream `push_sat`)
-+//!   0x191000..0x195000  ACTLOG header + log (custom app)
-+//!   0x195000..0x196000  THEME block (this module)
-+//!
-+//! Block format (first 6 bytes of the sector, the rest stays 0xFF):
-+//!   [0..4]  magic `THM1`
-+//!   [4]     theme id (0..THEME_COUNT)
-+//!   [5]     CRC-8 (poly 0x07, init 0x00) over bytes [0..5]
-+//! A missing, erased or CRC-invalid block selects theme 0 (APX Pro).
++//! RETIRED (2026-11-24 rework): the first fork design kept the theme in
++//! a `THM1` block at app-data sector 0x195000, written by a THEMES
++//! overlay app and read by the core at boot / on entering standby.
++//! That design is gone — nothing reads or writes that sector anymore
++//! and 0x195000 is free app-data space again. The Settings record was
++//! never involved (it is byte-full and stays CPS-compatible).
 +
 +use embedded_graphics::pixelcolor::Rgb565;
-+
-+pub const THEME_DATA_ADDR: u32 = 0x0019_5000;
-+pub const THEME_MAGIC: [u8; 4] = *b"THM1";
-+pub const THEME_COUNT: u8 = 4;
 +
 +pub const THEME_APX: u8 = 0;
 +pub const THEME_CLEAN: u8 = 1;
 +pub const THEME_DENSE: u8 = 2;
 +pub const THEME_MINIMAL: u8 = 3;
 +
-+pub fn crc8(data: &[u8]) -> u8 {
-+    let mut crc: u8 = 0;
-+    for &byte in data {
-+        crc ^= byte;
-+        for _ in 0..8 {
-+            crc = if crc & 0x80 != 0 {
-+                (crc << 1) ^ 0x07
-+            } else {
-+                crc << 1
-+            };
-+        }
-+    }
-+    crc
-+}
++/// Exactly one theme feature per build — enforced here so a variant
++/// can never silently carry (and pay flash for) two renderers.
++const THEME_FEATURE_COUNT: u32 = cfg!(feature = "theme-apx") as u32
++    + cfg!(feature = "theme-clean") as u32
++    + cfg!(feature = "theme-dense") as u32
++    + cfg!(feature = "theme-minimal") as u32;
++const _: () = assert!(
++    THEME_FEATURE_COUNT == 1,
++    "enable exactly one theme-* feature (default: theme-apx)"
++);
 +
-+/// Validate a raw theme block; returns the theme id, or 0 when the block
-+/// is absent/corrupt or the id is out of range.
-+pub fn parse_theme_block(buf: &[u8]) -> u8 {
-+    if buf.len() < 6 || buf[0..4] != THEME_MAGIC {
-+        return THEME_APX;
-+    }
-+    let id = buf[4];
-+    if id >= THEME_COUNT || crc8(&buf[0..5]) != buf[5] {
-+        return THEME_APX;
-+    }
-+    id
-+}
++/// The theme compiled into this firmware variant.
++#[cfg(feature = "theme-apx")]
++pub const ACTIVE_THEME: u8 = THEME_APX;
++#[cfg(feature = "theme-clean")]
++pub const ACTIVE_THEME: u8 = THEME_CLEAN;
++#[cfg(feature = "theme-dense")]
++pub const ACTIVE_THEME: u8 = THEME_DENSE;
++#[cfg(feature = "theme-minimal")]
++pub const ACTIVE_THEME: u8 = THEME_MINIMAL;
++
++/// Human-readable name of the compiled-in theme (catalog / docs use).
++#[cfg(feature = "theme-apx")]
++pub const ACTIVE_THEME_NAME: &str = "APX Pro";
++#[cfg(feature = "theme-clean")]
++pub const ACTIVE_THEME_NAME: &str = "Clean Modern";
++#[cfg(feature = "theme-dense")]
++pub const ACTIVE_THEME_NAME: &str = "Data Dense";
++#[cfg(feature = "theme-minimal")]
++pub const ACTIVE_THEME_NAME: &str = "Minimal Dark";
 +
 +const fn rgb(r: u8, g: u8, b: u8) -> Rgb565 {
 +    Rgb565::new(r, g, b)
@@ -2080,6 +2241,12 @@ index 0000000..bfbc3bf
 +    pub amber: Rgb565,
 +    pub green: Rgb565,
 +    pub alert: Rgb565,
++}
++
++/// Palette of the compiled-in theme. `ACTIVE_THEME` is a const, so
++/// the non-selected arms below are const-folded away.
++pub fn active_palette() -> Palette {
++    palette(ACTIVE_THEME)
 +}
 +
 +pub fn palette(id: u8) -> Palette {
