@@ -70,3 +70,8 @@ from Preston's session (03:05–03:08 EST).
 - Preston's bench verdict: "Both apps work great" — FM app launches (5807M
   path exercised via the app) and Settings app runs. Remaining bench items:
   GMRS TX test with the stock BK unit listening, FM audio quality report.
+- TX CONFIRMED Nov 24 (Preston, after the UNLOCK change): TX and RX both
+  work great on the dev unit. First-flash catalog COMPLETE — every major
+  subsystem on the 5RH10W-V05 verified under bf-5rh: display, keypad,
+  receiver, transmitter/PA, FM broadcast tuner, external-flash storage,
+  CPS, overlay apps.
