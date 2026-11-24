@@ -1,0 +1,50 @@
+{
+  "firmwares": [
+    {
+      "id": "bf5rh-m0",
+      "name": "bf-5rh M0 (upstream, unmodified)",
+      "file": "firmware/bf5rh-m0.BF",
+      "size": 57508,
+      "sha256": "b04356cbeebb91a1aa0b593e5e1414df1fc1a3cc6fae716b1f0c36875c90357e",
+      "notes": "First-flash build, boots on 5RH10W-V05, all subsystems verified 2026-11-24."
+    }
+  ],
+  "apps": [
+    {
+      "id": "chanmgr",
+      "name": "CHANMGR",
+      "file": "apps/chanmgr.app",
+      "size": 7808,
+      "sha256": "2460505575c2bf60c9e7543bd06f8238f1582dc32f00b919ebeee46dd2382f07",
+      "segments": 1,
+      "notes": "Channel manager."
+    },
+    {
+      "id": "fm",
+      "name": "FM",
+      "file": "apps/fm.app",
+      "size": 3800,
+      "sha256": "54913aec9fdd575d5bd88faeb5b24581bb57cf02054f1b3d3955afd4d622c2e3",
+      "segments": 1,
+      "notes": "FM broadcast radio."
+    },
+    {
+      "id": "settings",
+      "name": "SETTINGS",
+      "file": "apps/settings.app",
+      "size": 20064,
+      "sha256": "56241c25308bfa09abd49fd28b706551cf8fb85d2510324e5bd560d7d3a469a7",
+      "segments": 3,
+      "notes": "On-radio settings editor."
+    },
+    {
+      "id": "spectrum",
+      "name": "SPECTRUM",
+      "file": "apps/spectrum.app",
+      "size": 6200,
+      "sha256": "ff8d85aa9f9fb36512925f59ba4a62e265723928f1a6e1031c66c9d0ea0d9063",
+      "segments": 1,
+      "notes": "Spectrum sweep display."
+    }
+  ]
+}

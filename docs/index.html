@@ -76,6 +76,12 @@
   .valmsg{font-family:var(--mono);font-size:12.5px;margin-top:8px;display:none}
   .valmsg.show{display:block}
   .valmsg.ok{color:var(--green)} .valmsg.fail{color:var(--red)}
+  .srcsel{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:10px}
+  .catalogdetails{font-family:var(--mono);font-size:12.5px;margin-top:8px;display:none;color:var(--muted);word-break:break-all}
+  .catalogdetails.show{display:block}
+  .catalogdetails .k{color:var(--faint)}
+  select.catalog{width:100%}
+  .srcnote{font-size:12.5px;color:var(--amber);margin-top:8px}
   label.field{display:block;margin-top:14px;font-size:13.5px;color:var(--muted)}
   label.field .hint{font-size:12.5px;color:var(--faint)}
   input[type="text"]{font-family:var(--mono);font-size:15px;background:var(--bg);color:var(--text);
@@ -222,7 +228,8 @@
   <section class="step" id="secFlash">
     <h2><span class="stepnum">STEP 3</span> Flash — write a .BF package <span class="pill" id="flashPill">locked</span></h2>
     <div class="instr">
-      Radio state: <strong>still in flash mode</strong> (black screen, from Step 2). Pick the prepared
+      Radio state: <strong>still in flash mode</strong> (black screen, from Step 2). Choose a
+      <strong>built-in firmware</strong> from the catalog, or upload the prepared
       <strong>.BF package</strong> file. The tool mirrors the tested <em>flash_bf.py</em>: single-region
       packages only, strict header checks, and a SHA-256 prefix gate before the Flash button can arm.
     </div>
@@ -230,7 +237,20 @@
       verified factory image to restore from. <strong>Unit 1 (BK) must stay stock and unflashed</strong>;
       never run this on it.</div>
     <div class="filebox">
-      <input type="file" id="fileInput" accept=".bf,.BF" />
+      <div class="srcsel" role="radiogroup" aria-label="Firmware source">
+        <label class="chk"><input type="radio" name="fwSrc" id="fwSrcBuiltin" /> Built-in firmwares</label>
+        <label class="chk"><input type="radio" name="fwSrc" id="fwSrcUpload" checked /> Upload a file</label>
+      </div>
+      <div id="fwBuiltinWrap" style="display:none">
+        <select id="fwCatalogSelect" class="catalog">
+          <option value="">Select a built-in firmware…</option>
+        </select>
+        <div class="catalogdetails" id="fwCatalogDetails"></div>
+        <div class="srcnote" id="fwCatalogNote" style="display:none">Built-in catalog unavailable on this copy of the page — use Upload a file.</div>
+      </div>
+      <div id="fwUploadWrap">
+        <input type="file" id="fileInput" accept=".bf,.BF" />
+      </div>
       <div class="filedetails" id="fileDetails"></div>
       <div class="valmsg" id="fileValMsg"></div>
     </div>
@@ -324,9 +344,22 @@
 
     <div class="subsec">
       <h3>Install app (.app)</h3>
-      <div class="instr">Pick a <strong>.app</strong> package. The page validates its 108-byte header in the browser before anything is sent — a build-hash mismatch means the app was built for a different firmware ABI and the radio would refuse to run it, so install stays disabled. Install erases the chosen slot, writes the file in 512-byte chunks, then reads the slot back and byte-compares it; success is claimed only on a matching read-back.</div>
+      <div class="instr">Choose a <strong>built-in app</strong> from the catalog, or upload a <strong>.app</strong> package. The page validates its 108-byte header in the browser before anything is sent — a build-hash mismatch means the app was built for a different firmware ABI and the radio would refuse to run it, so install stays disabled. Install erases the chosen slot, writes the file in 512-byte chunks, then reads the slot back and byte-compares it; success is claimed only on a matching read-back.</div>
       <div class="filebox">
-        <input type="file" id="cpsAppFile" accept=".app" />
+        <div class="srcsel" role="radiogroup" aria-label="App source">
+          <label class="chk"><input type="radio" name="cpsAppSrc" id="cpsAppSrcBuiltin" /> Built-in apps</label>
+          <label class="chk"><input type="radio" name="cpsAppSrc" id="cpsAppSrcUpload" checked /> Upload a file</label>
+        </div>
+        <div id="cpsAppBuiltinWrap" style="display:none">
+          <select id="cpsAppCatalogSelect" class="catalog">
+            <option value="">Select a built-in app…</option>
+          </select>
+          <div class="catalogdetails" id="cpsAppCatalogDetails"></div>
+          <div class="srcnote" id="cpsAppCatalogNote" style="display:none">Built-in catalog unavailable on this copy of the page — use Upload a file.</div>
+        </div>
+        <div id="cpsAppUploadWrap">
+          <input type="file" id="cpsAppFile" accept=".app" />
+        </div>
         <div class="filedetails" id="cpsAppDetails"></div>
         <div class="valmsg" id="cpsAppValMsg"></div>
       </div>
@@ -583,6 +616,12 @@ function refreshControls(){
   $("btnAbortBackup").disabled=!(S.running && S.runningOp==="backup");
   $("btnAbortFlash").disabled=!(S.running && S.runningOp==="flash");
   $("fileInput").disabled=S.running || !serialSupported;
+  $("fwCatalogSelect").disabled=!!S.running || !serialSupported;
+  $("fwSrcBuiltin").disabled=!!S.running || !catalogLoaded;
+  $("fwSrcUpload").disabled=!!S.running;
+  $("cpsAppCatalogSelect").disabled=!!S.running || !serialSupported;
+  $("cpsAppSrcBuiltin").disabled=!!S.running || !catalogLoaded;
+  $("cpsAppSrcUpload").disabled=!!S.running;
   $("shaInput").disabled=!S.file || S.running || !serialSupported;
   /* Step 4 (CPS) gates */
   var cpsDis=!S.connected || !!S.running || !serialSupported;
@@ -988,14 +1027,27 @@ async function doFlash(){
 
 /* ---------- .BF file handling & validation (flash_bf.py asserts) ---------- */
 function u32be(b,off){ return ((b[off]<<24)>>>0) + (b[off+1]<<16) + (b[off+2]<<8) + b[off+3]; }
-async function onFileChosen(){
-  var input=$("fileInput");
+async function sha256Hex(buf){
+  var digest=await crypto.subtle.digest("SHA-256", buf);
+  return toHex(new Uint8Array(digest)).replace(/ /g,"");
+}
+function clearBfPackage(){
   var det=$("fileDetails"), vm=$("fileValMsg");
   det.className="filedetails"; det.innerHTML=""; vm.className="valmsg"; vm.textContent="";
   S.file=null; S.fileValid=false; $("shaInput").value="";
-  if(!input.files || !input.files.length){ refreshControls(); return; }
+  refreshControls();
+}
+async function onFileChosen(){
+  var input=$("fileInput");
+  if(!input.files || !input.files.length){ clearBfPackage(); return; }
   var file=input.files[0];
   var buf=new Uint8Array(await file.arrayBuffer());
+  await loadBfPackage(file.name, buf);
+}
+async function loadBfPackage(name, buf){
+  var det=$("fileDetails"), vm=$("fileValMsg");
+  det.className="filedetails"; det.innerHTML=""; vm.className="valmsg"; vm.textContent="";
+  S.file=null; S.fileValid=false; $("shaInput").value="";
   var problems=[];
   var lenFw=null, cntPart=null, lenData=null, pkgs=null;
   if(buf.length<16) problems.push("File is only "+buf.length+" bytes — a .BF package needs at least a 16-byte header.");
@@ -1019,9 +1071,9 @@ async function onFileChosen(){
     shaHex=toHex(d).replace(/ /g,"");
   }catch(e){ problems.push("Could not compute SHA-256 ("+e.message+")."); }
   pkgs=(lenFw!==null)?Math.ceil(lenFw/1024):null;
-  S.file={name:file.name, size:buf.length, bytes:buf, lenFw:lenFw, payload:(lenFw!==null && buf.length>=16)?buf.slice(16):null, sha:shaHex};
+  S.file={name:name, size:buf.length, bytes:buf, lenFw:lenFw, payload:(lenFw!==null && buf.length>=16)?buf.slice(16):null, sha:shaHex};
   det.innerHTML=
-    "<span class='k'>File:</span> "+escapeHtml(file.name)+"<br/>"+
+    "<span class='k'>File:</span> "+escapeHtml(name)+"<br/>"+
     "<span class='k'>Size:</span> "+buf.length+" bytes &nbsp; <span class='k'>Header:</span> cntPart "+cntPart+", lenFw "+lenFw+", lenData "+lenData+"<br/>"+
     "<span class='k'>Packages:</span> "+pkgs+" × 1024 bytes (final package zero-padded on the wire)<br/>"+
     "<span class='k'>SHA-256:</span> <span class='sha'>"+shaHex+"</span>";
@@ -1030,7 +1082,7 @@ async function onFileChosen(){
     S.fileValid=true;
     vm.textContent="Validation passed — all flash_bf.py pre-flight checks OK. Type the first 8 hex characters of the SHA-256 above to satisfy the last file gate.";
     vm.className="valmsg show ok";
-    logMsg("Package loaded: "+file.name+" ("+buf.length+" bytes, lenFw "+lenFw+", "+pkgs+" packages). Validation passed. SHA-256 "+shaHex,"ok");
+    logMsg("Package loaded: "+name+" ("+buf.length+" bytes, lenFw "+lenFw+", "+pkgs+" packages). Validation passed. SHA-256 "+shaHex,"ok");
   }else{
     S.fileValid=false;
     vm.textContent="Validation FAILED: "+problems.join(" ");
@@ -1393,14 +1445,23 @@ async function doCpsSetBandConfirmed(){
     logMsg("Set band lock failed: "+e.message,"err");
   }finally{ S.cpsPendingProfile=null; setRunning(null); refreshControls(); }
 }
-async function onCpsAppChosen(){
-  var input=$("cpsAppFile");
+function clearCpsApp(){
   var det=$("cpsAppDetails"), vm=$("cpsAppValMsg");
   det.className="filedetails"; det.innerHTML=""; vm.className="valmsg"; vm.textContent="";
   S.cpsApp=null; S.cpsAppValid=false;
-  if(!input.files || !input.files.length){ refreshControls(); return; }
+  refreshControls();
+}
+async function onCpsAppChosen(){
+  var input=$("cpsAppFile");
+  if(!input.files || !input.files.length){ clearCpsApp(); return; }
   var file=input.files[0];
   var buf=new Uint8Array(await file.arrayBuffer());
+  await loadCpsApp(file.name, buf);
+}
+async function loadCpsApp(name, buf){
+  var det=$("cpsAppDetails"), vm=$("cpsAppValMsg");
+  det.className="filedetails"; det.innerHTML=""; vm.className="valmsg"; vm.textContent="";
+  S.cpsApp=null; S.cpsAppValid=false;
   var problems=[];
   var appName="", segCount=null, hash=null;
   if(buf.length<108) problems.push("File is only "+buf.length+" bytes — an .app package needs at least the 108-byte header.");
@@ -1414,14 +1475,14 @@ async function onCpsAppChosen(){
     if(!(segCount>=1 && segCount<=4)) problems.push("Segment count is "+segCount+" — expected 1–4.");
     appName=decodeAsciiTrim(buf.slice(12,28));
   }
-  S.cpsApp={name:file.name, size:buf.length, bytes:buf, appName:appName, segCount:segCount, hash:hash};
-  det.innerHTML="<span class='k'>File:</span> "+escapeHtml(file.name)+"<br/><span class='k'>Size:</span> "+buf.length+" bytes<br/><span class='k'>App name:</span> "+escapeHtml(appName||"(none parsed)")+"<br/><span class='k'>Segments:</span> "+segCount+"<br/><span class='k'>Build hash:</span> "+(hash!==null?("0x"+hash.toString(16).padStart(8,"0").toUpperCase()):"—");
+  S.cpsApp={name:name, size:buf.length, bytes:buf, appName:appName, segCount:segCount, hash:hash};
+  det.innerHTML="<span class='k'>File:</span> "+escapeHtml(name)+"<br/><span class='k'>Size:</span> "+buf.length+" bytes<br/><span class='k'>App name:</span> "+escapeHtml(appName||"(none parsed)")+"<br/><span class='k'>Segments:</span> "+segCount+"<br/><span class='k'>Build hash:</span> "+(hash!==null?("0x"+hash.toString(16).padStart(8,"0").toUpperCase()):"—");
   det.className="filedetails show";
   if(problems.length===0){
     S.cpsAppValid=true;
     vm.textContent="Validation passed — header OK (OVL1, build hash matches this firmware, "+segCount+" segment(s)). Install is enabled once the CPS handshake has succeeded.";
     vm.className="valmsg show ok";
-    logMsg("App package loaded: "+file.name+" ("+buf.length+" bytes, '"+appName+"', "+segCount+" segment(s)). Header validation passed.","ok");
+    logMsg("App package loaded: "+name+" ("+buf.length+" bytes, '"+appName+"', "+segCount+" segment(s)). Header validation passed.","ok");
   }else{
     S.cpsAppValid=false;
     vm.textContent="Rejected: "+problems.join(" ");
@@ -1491,6 +1552,124 @@ async function doCpsInstall(){
   }finally{ setRunning(null); refreshControls(); }
 }
 
+/* ---------- built-in catalog (catalog.json, relative to this page) ----------
+   The catalog only changes WHERE package bytes come from. A built-in entry is
+   fetched, its SHA-256 is verified against the manifest, and only then do the
+   exact same loadBfPackage / loadCpsApp validation paths run as for an upload.
+   If catalog.json cannot be loaded (a copy of this page hosted without the
+   catalog files), built-in mode disables itself and upload keeps working. */
+var catalog=null, catalogLoaded=false;
+function catalogBasename(path){ var i=path.lastIndexOf("/"); return i>=0?path.slice(i+1):path; }
+function setFwMode(builtin){
+  $("fwSrcBuiltin").checked=builtin; $("fwSrcUpload").checked=!builtin;
+  $("fwBuiltinWrap").style.display=builtin?"":"none";
+  $("fwUploadWrap").style.display=builtin?"none":"";
+}
+function setCpsAppMode(builtin){
+  $("cpsAppSrcBuiltin").checked=builtin; $("cpsAppSrcUpload").checked=!builtin;
+  $("cpsAppBuiltinWrap").style.display=builtin?"":"none";
+  $("cpsAppUploadWrap").style.display=builtin?"none":"";
+}
+function onFwSourceChange(){
+  var builtin=$("fwSrcBuiltin").checked;
+  setFwMode(builtin);
+  $("fwCatalogSelect").value="";
+  var cd=$("fwCatalogDetails"); cd.className="catalogdetails"; cd.textContent="";
+  clearBfPackage();
+  logMsg("Firmware source: "+(builtin?"built-in catalog.":"file upload."));
+}
+function onCpsAppSourceChange(){
+  var builtin=$("cpsAppSrcBuiltin").checked;
+  setCpsAppMode(builtin);
+  $("cpsAppCatalogSelect").value="";
+  var cd=$("cpsAppCatalogDetails"); cd.className="catalogdetails"; cd.textContent="";
+  clearCpsApp();
+  logMsg("App source: "+(builtin?"built-in catalog.":"file upload."));
+}
+function catalogEntry(list, id){
+  if(!list) return null;
+  for(var i=0;i<list.length;i++) if(list[i].id===id) return list[i];
+  return null;
+}
+async function onFwCatalogChosen(){
+  var sel=$("fwCatalogSelect"), det=$("fwCatalogDetails");
+  var entry=catalogEntry(catalog?catalog.firmwares:null, sel.value);
+  if(!entry){ det.className="catalogdetails"; det.textContent=""; clearBfPackage(); return; }
+  det.className="catalogdetails show";
+  det.innerHTML="<span class='k'>Name:</span> "+escapeHtml(entry.name)+"<br/>"+
+    "<span class='k'>Size:</span> "+entry.size+" bytes"+
+    (entry.notes?("<br/><span class='k'>Notes:</span> "+escapeHtml(entry.notes)):"");
+  clearBfPackage();
+  try{
+    logMsg("Catalog: fetching built-in firmware "+entry.file+" …");
+    var resp=await fetch(entry.file);
+    if(!resp.ok) throw new Error("HTTP "+resp.status);
+    var buf=new Uint8Array(await resp.arrayBuffer());
+    var sha=await sha256Hex(buf);
+    if(sha.toLowerCase()!==String(entry.sha256).toLowerCase()){
+      logMsg("Catalog: SHA-256 mismatch for "+entry.file+" — manifest "+entry.sha256+", downloaded "+sha+". NOT loaded.","err");
+      det.innerHTML+="<br/><span style='color:var(--red)'>SHA-256 mismatch — manifest "+escapeHtml(String(entry.sha256))+", downloaded "+sha+". This firmware was NOT loaded.</span>";
+      return;
+    }
+    logMsg("Catalog: SHA-256 verified for "+entry.file+" ("+sha+").","ok");
+    await loadBfPackage(catalogBasename(entry.file), buf);
+  }catch(e){
+    logMsg("Catalog: failed to fetch built-in firmware "+entry.file+": "+e.message,"err");
+    det.innerHTML+="<br/><span style='color:var(--red)'>Fetch failed: "+escapeHtml(e.message)+"</span>";
+  }
+}
+async function onCpsAppCatalogChosen(){
+  var sel=$("cpsAppCatalogSelect"), det=$("cpsAppCatalogDetails");
+  var entry=catalogEntry(catalog?catalog.apps:null, sel.value);
+  if(!entry){ det.className="catalogdetails"; det.textContent=""; clearCpsApp(); return; }
+  det.className="catalogdetails show";
+  det.innerHTML="<span class='k'>Name:</span> "+escapeHtml(entry.name)+"<br/>"+
+    "<span class='k'>Size:</span> "+entry.size+" bytes<br/>"+
+    "<span class='k'>Segments:</span> "+entry.segments+
+    (entry.notes?("<br/><span class='k'>Notes:</span> "+escapeHtml(entry.notes)):"");
+  clearCpsApp();
+  try{
+    logMsg("Catalog: fetching built-in app "+entry.file+" …");
+    var resp=await fetch(entry.file);
+    if(!resp.ok) throw new Error("HTTP "+resp.status);
+    var buf=new Uint8Array(await resp.arrayBuffer());
+    var sha=await sha256Hex(buf);
+    if(sha.toLowerCase()!==String(entry.sha256).toLowerCase()){
+      logMsg("Catalog: SHA-256 mismatch for "+entry.file+" — manifest "+entry.sha256+", downloaded "+sha+". NOT loaded.","err");
+      det.innerHTML+="<br/><span style='color:var(--red)'>SHA-256 mismatch — manifest "+escapeHtml(String(entry.sha256))+", downloaded "+sha+". This app was NOT loaded.</span>";
+      return;
+    }
+    logMsg("Catalog: SHA-256 verified for "+entry.file+" ("+sha+").","ok");
+    await loadCpsApp(catalogBasename(entry.file), buf);
+  }catch(e){
+    logMsg("Catalog: failed to fetch built-in app "+entry.file+": "+e.message,"err");
+    det.innerHTML+="<br/><span style='color:var(--red)'>Fetch failed: "+escapeHtml(e.message)+"</span>";
+  }
+}
+async function loadCatalog(){
+  try{
+    var resp=await fetch("catalog.json");
+    if(!resp.ok) throw new Error("HTTP "+resp.status);
+    var data=await resp.json();
+    if(!data || !Array.isArray(data.firmwares) || !Array.isArray(data.apps)) throw new Error("catalog.json is not in the expected format");
+    catalog=data; catalogLoaded=true;
+    var fs=$("fwCatalogSelect");
+    data.firmwares.forEach(function(e){ var o=document.createElement("option"); o.value=e.id; o.textContent=e.name; fs.appendChild(o); });
+    var as=$("cpsAppCatalogSelect");
+    data.apps.forEach(function(e){ var o=document.createElement("option"); o.value=e.id; o.textContent=e.name; as.appendChild(o); });
+    setFwMode(true); setCpsAppMode(true);
+    refreshControls();
+    logMsg("Catalog loaded: "+data.firmwares.length+" firmware(s), "+data.apps.length+" app(s) available built-in.","ok");
+  }catch(e){
+    catalog=null; catalogLoaded=false;
+    $("fwCatalogNote").style.display="";
+    $("cpsAppCatalogNote").style.display="";
+    setFwMode(false); setCpsAppMode(false);
+    refreshControls();
+    logMsg("Built-in catalog unavailable ("+e.message+") — use Upload a file; file upload still works.","warn");
+  }
+}
+
 /* ---------- wiring ---------- */
 $("btnConnect").addEventListener("click", doConnect);
 $("btnDisconnect").addEventListener("click", doDisconnect);
@@ -1499,6 +1678,9 @@ $("btnProbe").addEventListener("click", doProbe);
 $("btnAbortBackup").addEventListener("click", function(){ S.abort=true; logMsg("Abort requested — the backup stops after the current block read.","warn"); });
 $("btnAbortFlash").addEventListener("click", function(){ S.abort=true; logMsg("Abort requested — the flash stops between packages. A partially flashed radio will need a full reflash.","warn"); });
 $("fileInput").addEventListener("change", onFileChosen);
+$("fwSrcBuiltin").addEventListener("change", onFwSourceChange);
+$("fwSrcUpload").addEventListener("change", onFwSourceChange);
+$("fwCatalogSelect").addEventListener("change", onFwCatalogChosen);
 $("shaInput").addEventListener("input", updateGates);
 $("btnFlash").addEventListener("click", openConfirm);
 $("btnCancelFlash").addEventListener("click", closeConfirm);
@@ -1510,6 +1692,9 @@ $("btnCpsSetBand").addEventListener("click", onCpsSetBandClick);
 $("btnCpsCancelBand").addEventListener("click", function(){ S.cpsPendingProfile=null; $("cpsConfirmBox").className="confirmbox"; logMsg("Band lock: change cancelled — nothing written."); });
 $("btnCpsConfirmBand").addEventListener("click", doCpsSetBandConfirmed);
 $("cpsAppFile").addEventListener("change", onCpsAppChosen);
+$("cpsAppSrcBuiltin").addEventListener("change", onCpsAppSourceChange);
+$("cpsAppSrcUpload").addEventListener("change", onCpsAppSourceChange);
+$("cpsAppCatalogSelect").addEventListener("change", onCpsAppCatalogChosen);
 $("btnCpsInstall").addEventListener("click", doCpsInstall);
 $("chkHex").addEventListener("change", renderAllLog);
 $("btnClearLog").addEventListener("click", function(){ logEntries=[]; $("logBox").innerHTML=""; });
@@ -1537,6 +1722,7 @@ $("btnDownloadLog").addEventListener("click", function(){
     logMsg("Web Serial is not available here — use Chrome or Edge on a desktop computer. All radio operations are disabled.","err");
   }
   refreshControls();
+  loadCatalog();
   if(!serialSupported){
     var controls2=document.querySelectorAll("button, input");
     controls2.forEach(function(c){ if(c.id!=="btnClearLog" && c.id!=="btnDownloadLog" && c.id!=="chkHex") c.disabled=true; });
