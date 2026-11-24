@@ -26,12 +26,23 @@
 //! is tone-agnostic (`set_subaudio_rx(0)`), speaker is muted while the
 //! app runs (`set_af_out(false)`, restored on exit). MENU switches to
 //! the review list (scanning pauses); EXIT leaves.
+//!
+//! SIZE — this app is interactive and stays resident, so its segment
+//! must fit ARENA_SIZE (8,192 B total). An earlier build was 10,084 B
+//! (an oversized segment): the loader only runs oversized segments
+//! transiently and faults them when Enter returns Continue
+//! (FAULT_OVERSIZE_CONTINUE), so the app never launched on hardware.
+//! The diet that fixed it: review records are read from NOR on
+//! demand instead of cached in RAM, the scan list uses parallel
+//! arrays, and all string building goes through the firmware's
+//! `fmt_u32`/`fmt_freq` helpers instead of core::fmt (whose Display
+//! machinery costs over a KB in an app this size). app.x pins
+//! LENGTH = 8192 as a build-time guard.
 
 #![no_std]
 #![no_main]
 
 use bf5rh_abi::{Api, AppEvent, AppResult, ListRow};
-use core::fmt::Write as _;
 
 const KIND_SINGLE: u8 = 2;
 const KEY_ASTERISK: u8 = 10;
@@ -55,19 +66,13 @@ const REC_SIZE: u32 = 16;
 const MAX_HITS: u32 = (LOG_SECTORS * SECTOR) / REC_SIZE; // 768
 const LOG_VERSION: u8 = 1;
 
-const MAX_ENTRIES: usize = 192;
+const MAX_ENTRIES: usize = 176;
 const REVIEW_MAX: usize = 48;
 
 const SETTLE_100US: u32 = 300; // 30 ms before first squelch check
 const DWELL_100US: u32 = 900; // 90 ms worst-case dwell
 const CLOSE_100US: u32 = 3000; // 300 ms of silence ends a hit
 const MIN_HIT_100US: u32 = 2000; // ignore openings < 200 ms
-
-#[derive(Clone, Copy)]
-struct Entry {
-    freq: u32,
-    chan: u16, // 0-based, 0xFFFF = fixed list
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -83,7 +88,8 @@ enum View {
 }
 
 struct State {
-    entries: [Entry; MAX_ENTRIES],
+    freqs: [u32; MAX_ENTRIES],
+    chans: [u16; MAX_ENTRIES], // 0xFFFF = fixed list
     entry_count: usize,
     idx: usize,
     phase: Phase,
@@ -97,8 +103,7 @@ struct State {
     // persistent log
     log_count: u32,
     log_full: bool,
-    // review cache: raw 16-byte records, newest first
-    review: [[u8; REC_SIZE as usize]; REVIEW_MAX],
+    // review state (records themselves are read from NOR on demand)
     review_count: usize,
     review_sel: usize,
     // display bookkeeping
@@ -113,10 +118,8 @@ struct State {
 }
 
 static mut STATE: State = State {
-    entries: [Entry {
-        freq: 0,
-        chan: 0xFFFF,
-    }; MAX_ENTRIES],
+    freqs: [0; MAX_ENTRIES],
+    chans: [0; MAX_ENTRIES],
     entry_count: 0,
     idx: 0,
     phase: Phase::Dwell,
@@ -128,7 +131,6 @@ static mut STATE: State = State {
     hit_peak_raw: 0,
     log_count: 0,
     log_full: false,
-    review: [[0xFF; REC_SIZE as usize]; REVIEW_MAX],
     review_count: 0,
     review_sel: 0,
     wide: true,
@@ -183,18 +185,17 @@ fn build_entries(api: &Api, st: &mut State) {
             continue;
         }
         // dedupe by frequency (the owner's plan repeats several)
-        if st.entries[..n].iter().any(|e| e.freq == freq) {
+        if st.freqs[..n].iter().any(|&f| f == freq) {
             continue;
         }
-        st.entries[n] = Entry { freq, chan: num };
+        st.freqs[n] = freq;
+        st.chans[n] = num;
         n += 1;
     }
     if n == 0 {
         for &f in FIXED_LIST {
-            st.entries[n] = Entry {
-                freq: f,
-                chan: 0xFFFF,
-            };
+            st.freqs[n] = f;
+            st.chans[n] = 0xFFFF;
             n += 1;
         }
     }
@@ -270,17 +271,8 @@ fn log_clear(api: &Api, st: &mut State) {
     st.have_last = false;
 }
 
-fn load_review(api: &Api, st: &mut State) {
-    let want = (st.log_count as usize).min(REVIEW_MAX);
-    for i in 0..want {
-        let src = st.log_count - 1 - i as u32;
-        (api.nor_read)(
-            LOG_ADDR + src * REC_SIZE,
-            st.review[i].as_mut_ptr(),
-            REC_SIZE,
-        );
-    }
-    st.review_count = want;
+fn load_review(st: &mut State) {
+    st.review_count = (st.log_count as usize).min(REVIEW_MAX);
     st.review_sel = 0;
 }
 
@@ -301,13 +293,13 @@ pub extern "C" fn app_entry(api: &Api, ev: AppEvent) -> AppResult {
 }
 
 fn tune_current(api: &Api, st: &State, first: bool) {
-    let e = st.entries[st.idx];
+    let freq = st.freqs[st.idx];
     if first {
-        (api.set_rx_freq)(e.freq);
-        (api.set_tx_freq)(e.freq);
+        (api.set_rx_freq)(freq);
+        (api.set_tx_freq)(freq);
         (api.enter_rx)();
     } else {
-        (api.retune_rx)(e.freq, st.wide);
+        (api.retune_rx)(freq, st.wide);
     }
 }
 
@@ -342,19 +334,12 @@ fn advance(api: &Api, st: &mut State) {
 
 fn finalize_hit(api: &Api, st: &mut State) {
     let dur_ms = (st.hit_open_100us / 10).min(65_535) as u16;
-    let e = st.entries[st.idx];
-    log_append(
-        api,
-        st,
-        e.freq,
-        e.chan,
-        st.hit_start_utc,
-        dur_ms,
-        st.hit_peak_raw,
-    );
-    st.last_freq = e.freq;
+    let freq = st.freqs[st.idx];
+    let chan = st.chans[st.idx];
+    log_append(api, st, freq, chan, st.hit_start_utc, dur_ms, st.hit_peak_raw);
+    st.last_freq = freq;
     st.last_dbm = st.hit_peak_raw as i32 - 170;
-    st.last_dur_s = (st.hit_open_100us / 10_000) as u32;
+    st.last_dur_s = st.hit_open_100us / 10_000;
     st.have_last = true;
     st.dirty = true;
 }
@@ -417,7 +402,7 @@ fn key(api: &Api, id: u8, kind: u8) -> AppResult {
                 return AppResult::Exit;
             }
             KEY_MENU => {
-                load_review(api, st);
+                load_review(st);
                 st.view = View::Review;
                 st.dirty = true;
             }
@@ -467,29 +452,54 @@ fn key(api: &Api, id: u8, kind: u8) -> AppResult {
     AppResult::Continue
 }
 
-struct TBuf {
+/// Minimal byte builder on top of the firmware's own number
+/// formatters — core::fmt costs over a KB in an app this size.
+struct Buf {
     b: [u8; 40],
     n: usize,
 }
 
-impl TBuf {
+impl Buf {
     fn new() -> Self {
-        TBuf { b: [0; 40], n: 0 }
+        Buf { b: [0; 40], n: 0 }
     }
-    fn as_slice(&self) -> &[u8] {
-        &self.b[..self.n]
-    }
-}
-
-impl core::fmt::Write for TBuf {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for &c in s.as_bytes() {
+    fn s(&mut self, s: &[u8]) {
+        for &c in s {
             if self.n < self.b.len() {
                 self.b[self.n] = c;
                 self.n += 1;
             }
         }
-        Ok(())
+    }
+    fn u32(&mut self, api: &Api, v: u32) {
+        let mut tmp = [0u8; 12];
+        let len = (api.fmt_u32)(v, tmp.as_mut_ptr()) as usize;
+        self.s(&tmp[..len.min(12)]);
+    }
+    fn i32(&mut self, api: &Api, v: i32) {
+        if v < 0 {
+            self.s(b"-");
+            self.u32(api, v.unsigned_abs());
+        } else {
+            self.u32(api, v as u32);
+        }
+    }
+    /// Zero-padded two digits (v mod 100), for clock fields.
+    fn pad2(&mut self, v: u32) {
+        let v = v % 100;
+        if self.n + 2 <= self.b.len() {
+            self.b[self.n] = b'0' + (v / 10) as u8;
+            self.b[self.n + 1] = b'0' + (v % 10) as u8;
+            self.n += 2;
+        }
+    }
+    fn freq(&mut self, api: &Api, hz: u32) {
+        let mut tmp = [0u8; 12];
+        let len = (api.fmt_freq)(hz, tmp.as_mut_ptr()) as usize;
+        self.s(&tmp[..len.min(12)]);
+    }
+    fn as_slice(&self) -> &[u8] {
+        &self.b[..self.n]
     }
 }
 
@@ -522,50 +532,57 @@ fn draw_scan(api: &Api, st: &State) {
     (api.fill_rect)(0, 0, 160, 128, BLACK);
     (api.fill_rect)(0, 0, 160, 14, TITLE_BG);
     text(api, 4, 2, b"ACTLOG", WHITE, TITLE_BG, F6);
-    let mut t = TBuf::new();
-    let _ = write!(
-        t,
-        "{}",
+    text(
+        api,
+        110,
+        2,
         match st.phase {
-            Phase::Dwell => "SCAN",
-            Phase::Hit => "HIT!",
-        }
+            Phase::Dwell => b"SCAN".as_slice(),
+            Phase::Hit => b"HIT!".as_slice(),
+        },
+        WHITE,
+        TITLE_BG,
+        F6,
     );
-    text(api, 110, 2, t.as_slice(), WHITE, TITLE_BG, F6);
 
     if st.entry_count > 0 {
-        let e = st.entries[st.idx];
-        let mut fbuf = [0u8; 12];
-        let flen = (api.fmt_freq)(e.freq, fbuf.as_mut_ptr()) as usize;
-        text(api, 4, 20, &fbuf[..flen.min(12)], WHITE, BLACK, F9);
-        let mut t = TBuf::new();
-        if e.chan != 0xFFFF {
-            let _ = write!(t, "CH {} of {}", e.chan + 1, st.entry_count);
+        let mut f = Buf::new();
+        f.freq(api, st.freqs[st.idx]);
+        text(api, 4, 20, f.as_slice(), WHITE, BLACK, F9);
+        let chan = st.chans[st.idx];
+        let mut t = Buf::new();
+        if chan != 0xFFFF {
+            t.s(b"CH ");
+            t.u32(api, chan as u32 + 1);
+            t.s(b" of ");
+            t.u32(api, st.entry_count as u32);
         } else {
-            let _ = write!(t, "FIXED LIST {}", st.entry_count);
+            t.s(b"FIXED LIST ");
+            t.u32(api, st.entry_count as u32);
         }
         text(api, 4, 44, t.as_slice(), WHITE, BLACK, F6);
     }
 
-    let mut t = TBuf::new();
-    let _ = write!(t, "LOG {} / {}", st.log_count, MAX_HITS);
+    let mut t = Buf::new();
+    t.s(b"LOG ");
+    t.u32(api, st.log_count);
+    t.s(b" / ");
+    t.u32(api, MAX_HITS);
     if st.log_full {
-        let _ = write!(t, " FULL");
+        t.s(b" FULL");
     }
     text(api, 4, 60, t.as_slice(), WHITE, BLACK, F6);
 
     if st.have_last {
-        let mut fbuf = [0u8; 12];
-        let flen = (api.fmt_freq)(st.last_freq, fbuf.as_mut_ptr()) as usize;
-        let mut t = TBuf::new();
-        let _ = write!(
-            t,
-            "LAST {}",
-            core::str::from_utf8(&fbuf[..flen.min(12)]).unwrap_or("")
-        );
+        let mut t = Buf::new();
+        t.s(b"LAST ");
+        t.freq(api, st.last_freq);
         text(api, 4, 74, t.as_slice(), WHITE, BLACK, F6);
-        let mut t = TBuf::new();
-        let _ = write!(t, "{} dBm  {} s", st.last_dbm, st.last_dur_s);
+        let mut t = Buf::new();
+        t.i32(api, st.last_dbm);
+        t.s(b" dBm  ");
+        t.u32(api, st.last_dur_s);
+        t.s(b" s");
         text(api, 4, 86, t.as_slice(), WHITE, BLACK, F6);
     } else {
         text(api, 4, 74, b"NO HITS YET", WHITE, BLACK, F6);
@@ -574,14 +591,13 @@ fn draw_scan(api: &Api, st: &State) {
     let elapsed_s = (api.uptime_100us)()
         .wrapping_sub(st.start_100us)
         / 10_000;
-    let mut t = TBuf::new();
-    let _ = write!(
-        t,
-        "RUN {:02}:{:02}:{:02}",
-        elapsed_s / 3600,
-        (elapsed_s / 60) % 60,
-        elapsed_s % 60
-    );
+    let mut t = Buf::new();
+    t.s(b"RUN ");
+    t.pad2(elapsed_s / 3600);
+    t.s(b":");
+    t.pad2((elapsed_s / 60) % 60);
+    t.s(b":");
+    t.pad2(elapsed_s % 60);
     text(api, 4, 102, t.as_slice(), WHITE, BLACK, F6);
     text(api, 4, 116, b"MENU log  EXIT", WHITE, BLACK, F6);
 }
@@ -609,27 +625,32 @@ fn draw_review(api: &Api, st: &State) {
             cursor: -1,
         };
         if gi < st.review_count {
-            let rec = st.review[gi];
+            // records are stored oldest-first; review shows newest first
+            let src = st.log_count - 1 - gi as u32;
+            let mut rec = [0u8; REC_SIZE as usize];
+            (api.nor_read)(
+                LOG_ADDR + src * REC_SIZE,
+                rec.as_mut_ptr(),
+                REC_SIZE,
+            );
             let freq = u32::from_le_bytes([rec[0], rec[1], rec[2], rec[3]]);
             let utc = u32::from_le_bytes([rec[4], rec[5], rec[6], rec[7]]);
             let dur_ms = u16::from_le_bytes([rec[8], rec[9]]) as u32;
             let peak_raw = u16::from_le_bytes([rec[10], rec[11]]);
-            let mut fbuf = [0u8; 12];
-            let flen = (api.fmt_freq)(freq, fbuf.as_mut_ptr()) as usize;
-            let fstr = core::str::from_utf8(&fbuf[..flen.min(12)]).unwrap_or("");
-            row.label[..fstr.len().min(16)].copy_from_slice(&fstr.as_bytes()[..fstr.len().min(16)]);
-            let mut val = TBuf::new();
+            let mut f = Buf::new();
+            f.freq(api, freq);
+            let fs = f.as_slice();
+            row.label[..fs.len().min(16)].copy_from_slice(&fs[..fs.len().min(16)]);
+            let mut val = Buf::new();
+            val.i32(api, peak_raw as i32 - 170);
+            val.s(b"dB ");
+            val.u32(api, dur_ms / 1000);
+            val.s(b"s");
             if utc != 0 {
-                let _ = write!(
-                    val,
-                    "{}dB {}s {:02}:{:02}",
-                    peak_raw as i32 - 170,
-                    dur_ms / 1000,
-                    (utc / 3600) % 24,
-                    (utc / 60) % 60
-                );
-            } else {
-                let _ = write!(val, "{}dB {}s", peak_raw as i32 - 170, dur_ms / 1000);
+                val.s(b" ");
+                val.pad2((utc / 3600) % 24);
+                val.s(b":");
+                val.pad2((utc / 60) % 60);
             }
             let vl = val.as_slice();
             row.value[..vl.len().min(18)].copy_from_slice(&vl[..vl.len().min(18)]);

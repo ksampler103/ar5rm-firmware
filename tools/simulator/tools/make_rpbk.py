@@ -7,7 +7,10 @@ present and CRC-valid, replaces the app's baked-in directory. Contract
 
     offset 0:  magic "RPBK"
     offset 4:  u8  version (= 1)
-    offset 5:  u8  reserved (0)
+    offset 5:  u8  source: 0 or 1 = user/ZIP-supplied block (the app shows
+               "RPTBOOK (ZIP)"); 2 = owner-default block shipped with the
+               flasher (plain "RPTBOOK" title). This builder writes 0;
+               gen_default_block.py writes 2.
     offset 6:  u16 LE record count (max 272)
     offset 8:  u16 LE CRC-16/XMODEM over the record bytes only
     offset 10: 6 reserved bytes (header is 16 bytes total)

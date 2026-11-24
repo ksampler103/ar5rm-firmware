@@ -1,0 +1,1322 @@
+[
+ {
+  "name": "GMRS CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 1",
+  "rx_hz": 451924750,
+  "tx_hz": 451924750,
+  "tx_tone": 77,
+  "rx_tone": 77,
+  "flags": 6
+ },
+ {
+  "name": "GMRS 2",
+  "rx_hz": 462587500,
+  "tx_hz": 462587500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 3",
+  "rx_hz": 462612500,
+  "tx_hz": 462612500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 4",
+  "rx_hz": 462637500,
+  "tx_hz": 462637500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 5",
+  "rx_hz": 462662500,
+  "tx_hz": 462662500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 6",
+  "rx_hz": 462687500,
+  "tx_hz": 462687500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 7",
+  "rx_hz": 462712500,
+  "tx_hz": 462712500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 8",
+  "rx_hz": 467562500,
+  "tx_hz": 467562500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 9",
+  "rx_hz": 467587500,
+  "tx_hz": 467587500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 10",
+  "rx_hz": 467612500,
+  "tx_hz": 467612500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 11",
+  "rx_hz": 467637500,
+  "tx_hz": 467637500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 12",
+  "rx_hz": 467662500,
+  "tx_hz": 467662500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 13",
+  "rx_hz": 467687500,
+  "tx_hz": 467687500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 14",
+  "rx_hz": 467712500,
+  "tx_hz": 467712500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 15",
+  "rx_hz": 462550000,
+  "tx_hz": 462550000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 16",
+  "rx_hz": 462575000,
+  "tx_hz": 462575000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 17",
+  "rx_hz": 462600000,
+  "tx_hz": 462600000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 18",
+  "rx_hz": 462625000,
+  "tx_hz": 462625000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 19",
+  "rx_hz": 462650000,
+  "tx_hz": 462650000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 20",
+  "rx_hz": 462675000,
+  "tx_hz": 462675000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 21",
+  "rx_hz": 462700000,
+  "tx_hz": 462700000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS 22",
+  "rx_hz": 462725000,
+  "tx_hz": 462725000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS15R",
+  "rx_hz": 467550000,
+  "tx_hz": 467550000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS16R",
+  "rx_hz": 467575000,
+  "tx_hz": 467575000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS17R",
+  "rx_hz": 467600000,
+  "tx_hz": 467600000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS18R",
+  "rx_hz": 467625000,
+  "tx_hz": 467625000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS19R",
+  "rx_hz": 467650000,
+  "tx_hz": 467650000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS20R",
+  "rx_hz": 467675000,
+  "tx_hz": 467675000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS21R",
+  "rx_hz": 467700000,
+  "tx_hz": 467700000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GMRS22R",
+  "rx_hz": 467725000,
+  "tx_hz": 467725000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MURS CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MURS 1",
+  "rx_hz": 151820000,
+  "tx_hz": 151820000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MURS 2",
+  "rx_hz": 151880000,
+  "tx_hz": 151880000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MURS 3",
+  "rx_hz": 151940000,
+  "tx_hz": 151940000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "BLUE DO",
+  "rx_hz": 154570000,
+  "tx_hz": 154570000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GREEN D",
+  "rx_hz": 154600000,
+  "tx_hz": 154600000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "NOAA CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX1PA7",
+  "rx_hz": 162550000,
+  "tx_hz": 162550000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX2PA1",
+  "rx_hz": 162400000,
+  "tx_hz": 162400000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX3PA4",
+  "rx_hz": 162475000,
+  "tx_hz": 162475000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX4PA2",
+  "rx_hz": 162425000,
+  "tx_hz": 162425000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX5PA3",
+  "rx_hz": 162450000,
+  "tx_hz": 162450000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX6PA5",
+  "rx_hz": 162500000,
+  "tx_hz": 162500000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX7PA6",
+  "rx_hz": 162525000,
+  "tx_hz": 162525000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX8",
+  "rx_hz": 161650000,
+  "tx_hz": 161650000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX9",
+  "rx_hz": 161775000,
+  "tx_hz": 161775000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "WX10",
+  "rx_hz": 163275000,
+  "tx_hz": 163275000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 01",
+  "rx_hz": 156050000,
+  "tx_hz": 151450000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 05",
+  "rx_hz": 156250000,
+  "tx_hz": 151650000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 06",
+  "rx_hz": 156300000,
+  "tx_hz": 156300000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 07",
+  "rx_hz": 156350000,
+  "tx_hz": 151750000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 08",
+  "rx_hz": 156400000,
+  "tx_hz": 156400000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 09",
+  "rx_hz": 156450000,
+  "tx_hz": 156450000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 10",
+  "rx_hz": 156500000,
+  "tx_hz": 156500000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 11",
+  "rx_hz": 156550000,
+  "tx_hz": 156550000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 12",
+  "rx_hz": 156600000,
+  "tx_hz": 156600000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 13",
+  "rx_hz": 156650000,
+  "tx_hz": 156650000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 14",
+  "rx_hz": 156700000,
+  "tx_hz": 156700000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 15",
+  "rx_hz": 156750000,
+  "tx_hz": 156750000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 16",
+  "rx_hz": 156800000,
+  "tx_hz": 156800000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 17",
+  "rx_hz": 156850000,
+  "tx_hz": 156850000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 18",
+  "rx_hz": 156900000,
+  "tx_hz": 156900000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 19",
+  "rx_hz": 156950000,
+  "tx_hz": 156950000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 20",
+  "rx_hz": 157000000,
+  "tx_hz": 157000000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 21",
+  "rx_hz": 157050000,
+  "tx_hz": 157050000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 22",
+  "rx_hz": 157100000,
+  "tx_hz": 157100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 23",
+  "rx_hz": 157150000,
+  "tx_hz": 157150000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 24",
+  "rx_hz": 157200000,
+  "tx_hz": 152600000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 25",
+  "rx_hz": 157250000,
+  "tx_hz": 152650000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 26",
+  "rx_hz": 157300000,
+  "tx_hz": 152700000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 27",
+  "rx_hz": 157350000,
+  "tx_hz": 152750000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 28",
+  "rx_hz": 157400000,
+  "tx_hz": 152800000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 63",
+  "rx_hz": 156175000,
+  "tx_hz": 156175000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 65",
+  "rx_hz": 156275000,
+  "tx_hz": 156275000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 66",
+  "rx_hz": 156325000,
+  "tx_hz": 156325000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 67",
+  "rx_hz": 156375000,
+  "tx_hz": 156375000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 68",
+  "rx_hz": 156425000,
+  "tx_hz": 156425000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 69",
+  "rx_hz": 156475000,
+  "tx_hz": 156475000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "DSC 70",
+  "rx_hz": 156525000,
+  "tx_hz": 156525000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 71",
+  "rx_hz": 156575000,
+  "tx_hz": 156575000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 72",
+  "rx_hz": 156625000,
+  "tx_hz": 156625000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 73",
+  "rx_hz": 156675000,
+  "tx_hz": 156675000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 74",
+  "rx_hz": 156725000,
+  "tx_hz": 156725000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 77",
+  "rx_hz": 156875000,
+  "tx_hz": 156875000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 78",
+  "rx_hz": 156925000,
+  "tx_hz": 156925000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 79",
+  "rx_hz": 156975000,
+  "tx_hz": 156975000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 80",
+  "rx_hz": 157025000,
+  "tx_hz": 157025000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 81",
+  "rx_hz": 157075000,
+  "tx_hz": 157075000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 82",
+  "rx_hz": 157125000,
+  "tx_hz": 157125000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 83",
+  "rx_hz": 157175000,
+  "tx_hz": 157175000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 84",
+  "rx_hz": 157225000,
+  "tx_hz": 152625000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 85",
+  "rx_hz": 157275000,
+  "tx_hz": 152675000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 86",
+  "rx_hz": 157325000,
+  "tx_hz": 152725000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 1
+ },
+ {
+  "name": "SEA 87",
+  "rx_hz": 157375000,
+  "tx_hz": 157375000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SEA 88",
+  "rx_hz": 157425000,
+  "tx_hz": 157425000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AIS CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AIS 1",
+  "rx_hz": 161975000,
+  "tx_hz": 161975000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AIS 2",
+  "rx_hz": 162025000,
+  "tx_hz": 162025000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AIR CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "VHF Guard",
+  "rx_hz": 121500000,
+  "tx_hz": 121500000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "ELT Training",
+  "rx_hz": 121775000,
+  "tx_hz": 121775000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AvSup 121.95",
+  "rx_hz": 121950000,
+  "tx_hz": 121950000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FLightWatch",
+  "rx_hz": 122200000,
+  "tx_hz": 122200000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 122.7",
+  "rx_hz": 122700000,
+  "tx_hz": 122700000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 122.7",
+  "rx_hz": 122725000,
+  "tx_hz": 122725000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Air-Air Fixe",
+  "rx_hz": 122750000,
+  "tx_hz": 122750000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 122.8",
+  "rx_hz": 122800000,
+  "tx_hz": 122800000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MULTICOM 122",
+  "rx_hz": 122850000,
+  "tx_hz": 122850000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MULTICOM 122",
+  "rx_hz": 122900000,
+  "tx_hz": 122900000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MULTICOM 122",
+  "rx_hz": 122925000,
+  "tx_hz": 122925000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 122.9",
+  "rx_hz": 122950000,
+  "tx_hz": 122950000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 122.9",
+  "rx_hz": 122975000,
+  "tx_hz": 122975000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 123.0",
+  "rx_hz": 123000000,
+  "tx_hz": 123000000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Air-Air Helo",
+  "rx_hz": 123025000,
+  "tx_hz": 123025000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 123.0",
+  "rx_hz": 123050000,
+  "tx_hz": 123050000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "UNICOM 123.0",
+  "rx_hz": 123075000,
+  "tx_hz": 123075000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SAR Primary",
+  "rx_hz": 123100000,
+  "tx_hz": 123100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123125000,
+  "tx_hz": 123125000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123150000,
+  "tx_hz": 123150000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123175000,
+  "tx_hz": 123175000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123200000,
+  "tx_hz": 123200000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123225000,
+  "tx_hz": 123225000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123250000,
+  "tx_hz": 123250000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123275000,
+  "tx_hz": 123275000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AvSup 123.3",
+  "rx_hz": 123300000,
+  "tx_hz": 123300000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123325000,
+  "tx_hz": 123325000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123350000,
+  "tx_hz": 123350000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123375000,
+  "tx_hz": 123375000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123400000,
+  "tx_hz": 123400000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123425000,
+  "tx_hz": 123425000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123450000,
+  "tx_hz": 123450000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123475000,
+  "tx_hz": 123475000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "AvSup 123.5",
+  "rx_hz": 123500000,
+  "tx_hz": 123500000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123525000,
+  "tx_hz": 123525000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123550000,
+  "tx_hz": 123550000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightTest 1",
+  "rx_hz": 123575000,
+  "tx_hz": 123575000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MILCOM 126.2",
+  "rx_hz": 126200000,
+  "tx_hz": 126200000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Deicing Comm",
+  "rx_hz": 129525000,
+  "tx_hz": 129525000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "MILCOM 134.1",
+  "rx_hz": 134100000,
+  "tx_hz": 134100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightInsp 1",
+  "rx_hz": 135850000,
+  "tx_hz": 135850000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "FlightInsp 1",
+  "rx_hz": 135900000,
+  "tx_hz": 135900000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "CALLING CH",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "2m Call",
+  "rx_hz": 146520000,
+  "tx_hz": 146520000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "220 Call",
+  "rx_hz": 223500000,
+  "tx_hz": 223500000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "70cm Call",
+  "rx_hz": 446000000,
+  "tx_hz": 446000000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "SC GMRS",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Gaffney 600",
+  "rx_hz": 462600000,
+  "tx_hz": 467600000,
+  "tx_tone": 1413,
+  "rx_tone": 0,
+  "flags": 3
+ },
+ {
+  "name": "McCor 650",
+  "rx_hz": 462650000,
+  "tx_hz": 467650000,
+  "tx_tone": 719,
+  "rx_tone": 0,
+  "flags": 3
+ },
+ {
+  "name": "Edgefld 625",
+  "rx_hz": 462625000,
+  "tx_hz": 467625000,
+  "tx_tone": 1230,
+  "rx_tone": 1230,
+  "flags": 7
+ },
+ {
+  "name": "Grenwd PD",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD PD Disp",
+  "rx_hz": 453625000,
+  "tx_hz": 453625000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD PD TAC",
+  "rx_hz": 460475000,
+  "tx_hz": 460475000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD Pub Wrks",
+  "rx_hz": 152285000,
+  "tx_hz": 152285000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD CPW1",
+  "rx_hz": 153545000,
+  "tx_hz": 153545000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD CPW2",
+  "rx_hz": 153410000,
+  "tx_hz": 153410000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD City Unk",
+  "rx_hz": 155040000,
+  "tx_hz": 155040000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Grenwd FD",
+  "rx_hz": 136100000,
+  "tx_hz": 136100000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD FD Disp",
+  "rx_hz": 453025000,
+  "tx_hz": 453025000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD FD TAC",
+  "rx_hz": 453800000,
+  "tx_hz": 453800000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "GWD Co FD Dp",
+  "rx_hz": 155677500,
+  "tx_hz": 155677500,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Ware Shls FD",
+  "rx_hz": 155355000,
+  "tx_hz": 155355000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "Gwd Co FD",
+  "rx_hz": 453525000,
+  "tx_hz": 453525000,
+  "tx_tone": 0,
+  "rx_tone": 0,
+  "flags": 0
+ },
+ {
+  "name": "CH 174",
+  "rx_hz": 462675000,
+  "tx_hz": 462675000,
+  "tx_tone": 205,
+  "rx_tone": 0,
+  "flags": 2
+ }
+]

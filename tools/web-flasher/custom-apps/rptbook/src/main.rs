@@ -21,14 +21,25 @@
 //!
 //!   DATA_OFFSET = 0x6000 (24,576) from the slot base.
 //!   The .app package itself must stay below 0x6000 bytes for this
-//!   contract to hold (check_app / mkapp output shows package size;
-//!   this build is ~10 KB). Slot size is 32,768 bytes, leaving
+//!   contract to hold. Slot size is 32,768 bytes, leaving
 //!   32,768 - 24,576 - 16 = 8,176 bytes for records.
+//!
+//!   RESIDENT-SIZE RULE: this app is interactive, so its segment must
+//!   fit ARENA_SIZE (8,192 B total). The firmware loader only lets an
+//!   oversized segment run transiently (it must Chain/Exit straight
+//!   out of Enter; a Continue faults FAULT_OVERSIZE_CONTINUE and the
+//!   app never launches). That is why the full directory lives in
+//!   this block and NOT in the binary: the flasher writes a block on
+//!   every install (owner-default or ZIP-built). The compiled-in
+//!   table in `baked.rs` is only a small fallback for when no valid
+//!   block exists.
 //!
 //! Block layout (all integers little-endian):
 //!   offset 0:  magic "RPBK" (4 bytes)
 //!   offset 4:  u8  version = 1
-//!   offset 5:  u8  reserved (0)
+//!   offset 5:  u8  source: 0/1 = local (ZIP-built) data, shown as
+//!              "RPTBOOK (ZIP)"; 2 = owner-default block (the owner's
+//!              own channels), shown as plain "RPTBOOK"
 //!   offset 6:  u16 record count N (1..=272)
 //!   offset 8:  u16 CRC-16/XMODEM (poly 0x1021, init 0x0000) over the
 //!              N * 30 record bytes that follow the header
@@ -53,10 +64,13 @@
 //!
 //! The app validates magic, version, count range, and CRC before
 //! trusting the block. With no valid block it falls back to the
-//! built-in table in `baked.rs` (generated from the owner's own CPS
-//! backup by gen_baked.py). A page composing a slot image writes:
-//! package bytes at slot offset 0, zeros/0xFF up to 0x6000, then the
-//! block — and installs it through the existing app-install flow.
+//! small built-in table in `baked.rs`. The owner's full channel
+//! directory ships as the default block (gen_default_block.py from
+//! default_channels.json, extracted from the original baked table
+//! that gen_baked.py produced from the owner's CPS backup). A page
+//! composing a slot image writes: package bytes at slot offset 0,
+//! zeros/0xFF up to 0x6000, then the block — and installs it through
+//! the existing app-install flow.
 //! ================================================================
 
 #![no_std]
@@ -107,7 +121,9 @@ struct Rec {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Source {
     Baked,
-    Injected { base: u32, count: u16 },
+    /// `local` = ZIP-built block (header source byte 0/1); the
+    /// owner-default block (source byte 2) shows the plain title.
+    Injected { base: u32, count: u16, local: bool },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -218,7 +234,11 @@ fn detect_source(api: &Api) -> Source {
             done += n;
         }
         if crc == want_crc {
-            return Source::Injected { base, count };
+            return Source::Injected {
+                base,
+                count,
+                local: bh[5] != 2,
+            };
         }
         return Source::Baked;
     }
@@ -479,8 +499,8 @@ fn draw_list_view(api: &Api, st: &State) {
     }
 
     let title: &[u8] = match st.source {
-        Source::Baked => b"RPTBOOK",
-        Source::Injected { .. } => b"RPTBOOK (ZIP)",
+        Source::Injected { local: true, .. } => b"RPTBOOK (ZIP)",
+        _ => b"RPTBOOK",
     };
     (api.draw_list)(
         title.as_ptr(),

@@ -31,6 +31,17 @@ Phase A build notes (2026-11-24, second run):
   observer position in settings before it can predict passes; the package
   alone launches to an empty list. Suggested slots above complete upstream
   `install_all.py`'s default layout (0 is reserved for hello, not built).
+  **Update (2026-11-24):** the table now exists and is installable from
+  the web flasher's SATELLITE panel — `docs/appdata/satellites.bin`
+  (5,120 B, 12 satellites, TLEs from CelesTrak fetched 2026-11-24;
+  sidecar metadata in `docs/appdata/satellites.json`). The packer is
+  `tools/web-flasher/satpack/mkrecord/` (upstream's `tools/mkrecord`
+  was missing from the tree; this implementation packs via the
+  `sgp4mini` crate's own `Record::encode` and is deployed to the
+  firmware tree's `tools/mkrecord/` so `push_sat.py` works whole).
+  Validated in the simulator with the table injected at 0x18C000 and a
+  Gastonia observer position: real pass list + live track screen with
+  Doppler.
 
 Build notes:
 
@@ -58,14 +69,32 @@ were not modified). All four carry build hash `0xDEC616E9` and PASS
 
 | File | App name | Segments | Size | SHA-256 | check_app verdict |
 |---|---|---|---|---|---|
-| `apps/actlog.app` | ACTLOG | 1 (image 10,080 B, oversized) | 10,188 B | `45ea08934ebe353d81cb01ae2f72cc646fad92acf3e8bc45518528512b25cafb` | PASS — stack budget +3,092 B margin |
-| `apps/rptbook.app` | RPTBOOK | 1 (image 10,160 B, oversized) | 10,268 B | `a058997f5b01d12ed81aff9ae13bab8797b547f99d488fd9c0f9e196ed5884d8` | PASS — stack budget +2,996 B margin |
+| `apps/actlog.app` | ACTLOG | 1 (segment total 5,888 B, resident) | 5,992 B | `789b64d761067eb3e5aded1a0042e2a75151607f090311866f7d6dcca0c44d18` | PASS — no oversized segment |
+| `apps/rptbook.app` | RPTBOOK | 1 (segment total 6,060 B, resident) | 6,148 B | `97e074fc68b6813b14616cd15e8e3c51ac4ade5809f89c903c26bb79a258fd7a` | PASS — no oversized segment |
 | `apps/foxhunt.app` | FOXHUNT | 1 (image 4,656 B) | 4,764 B | `cc75095c292b8ce7d9925820b4fd0e969d0e8f705fcf766835ea3cb37ae78d0b` | PASS — all checks OK |
 | `apps/wxpanel.app` | WXPANEL | 1 (image 5,632 B) | 5,740 B | `70f52eb5c0a4d82596d94fc204f2b209bf4730cdd7aa10a7668b994aeb90eb96` | PASS — all checks OK |
 
-ACTLOG and RPTBOOK are *oversized* segments (image > ARENA_SIZE 8,192 B,
-within ARENA_MAX 12,288 B) — the same mechanism upstream's satellite
-predict segment uses; their `app.x` declares LENGTH = 12288.
+**The resident-size rule (root cause of the 2026-11-24 launch failures).**
+A segment whose total (image + bss) is ≤ ARENA_SIZE (8,192 B) is loaded
+as a *resident* segment and may stay on screen. A larger segment (up to
+ARENA_MAX 12,288 B) is loaded into the arena plus a canary-guarded stack
+extension and is **transient-only**: its Enter handler must Chain or
+Exit immediately (upstream's satellite *predict* segment works this
+way). If an oversized segment returns `Continue` from Enter, the loader
+faults it (`FAULT_OVERSIZE_CONTINUE = 0xE0000002`) and unloads it
+instantly — the app appears to never launch. Any later event delivered
+while an oversized segment is resident faults too
+(`FAULT_OVERSIZE_RESIDENT = 0xE0000001`). `check_app.py` validates
+oversized segments as legal packages (they are — for transient apps)
+but cannot know an app intends to stay resident.
+
+The first ACTLOG (segment total 10,084 B) and RPTBOOK (10,180 B) builds
+were single oversized *resident* segments, so both faulted on Enter on
+real hardware while passing check_app and the (then lenient) simulator.
+Fixed 2026-11-24 by shrinking both under 8,192 B (below); their `app.x`
+now declares LENGTH = 8192 as a build-time guard. The simulator harness
+now enforces the same loader rules and reproduces the fault on the old
+builds. FOXHUNT and WXPANEL were always under the limit and unaffected.
 
 ### ACTLOG — activity logger
 
@@ -92,17 +121,40 @@ limits: dwell means very short transmissions can be missed; the clock
 is unset after power-on until something sets it, so timestamps depend
 on that.
 
+Size fix (2026-11-24): to get under the 8,192 B resident-segment limit,
+review records are read from NOR on demand (no 768 B RAM cache), the
+scan list uses parallel freq/channel arrays (cap 176), and all string
+building goes through the firmware's `fmt_u32`/`fmt_freq` helpers
+(`core::fmt` cost ~3 KB). Screens, log layout, and behavior are
+unchanged.
+
 ### RPTBOOK — repeater book (with injected-data contract)
 
-Directory of **Preston's real parsed channels: 165 entries** generated
-by `custom-apps/rptbook/gen_baked.py` from his pre-flash backup
-(`factory_memory.img`, bf-5rh `flash_map::Channel` layout: BCD deci-Hz
-frequencies, 12-byte names, firmware subaudio tone codes) into
-`src/baked.rs`. Read-only — the app never writes channel data. MENU
-tunes the entry in-app (exact RX/TX/tones); `#` shows a detail view;
-on EXIT after a tune, `save_master_vfo` lands the standby VFO on the
-entry's RX frequency (with the TX tone if any — the standby VFO applies
-its own offset rules after exit; the in-app tune is the exact one).
+Read-only — the app never writes channel data. MENU tunes the entry
+in-app (exact RX/TX/tones); `#` shows a detail view; on EXIT after a
+tune, `save_master_vfo` lands the standby VFO on the entry's RX
+frequency (with the TX tone if any — the standby VFO applies its own
+offset rules after exit; the in-app tune is the exact one).
+
+Data layers, in priority order:
+
+1. **Injected block** at slot offset 0x6000 (contract below), when
+   present and CRC-valid.
+2. **Baked fallback** in `src/baked.rs`: 17 generic entries (NOAA WX
+   1–7 RX-only, GMRS 550–725 simplex, 2 m / 70 cm calling frequencies).
+
+**Preston's 165 real channels** (parsed by `gen_baked.py` from his
+pre-flash backup: BCD deci-Hz frequencies, 12-byte names, firmware
+subaudio tone codes) originally lived in the binary — that is what
+pushed the segment oversized. They now ship as the **owner-default
+injected block**: `custom-apps/rptbook/default_channels.json` (the
+extracted entries) → `gen_default_block.py` → `docs/appdata/
+rptbook-default.bin` (4,966 B, 165 records, SHA-256
+`bace816fbe205f938fcfb536d09bb719bfc7d337493a992b1b73585e4878ef46`),
+which the flasher writes into the slot right after installing the app
+when no ZIP block is supplied. Header byte 5 (source) = 2 marks it as
+the owner-default block, so the app shows the plain "RPTBOOK" title;
+ZIP/user blocks (source 0 or 1) show "RPTBOOK (ZIP)".
 
 **Injected data block (ZIP-code flow, Preston's design amendment):**
 the app supports a data block patched into its flash slot at install
@@ -115,10 +167,12 @@ slot image → existing install, with **no app rebuild per location**.
   package named `RPTBOOK` and reads the block at `slot_base + 0x6000`.
   No file patching of the .app binary is needed.
 - *Offset:* **0x6000** (24,576) from the slot base. The package
-  (10,268 B) must stay below 0x6000 for the contract to hold.
-- *Format:* 16-byte header — magic `RPBK`, u8 version = 1, u8 reserved,
-  u16 record count, u16 **CRC-16/XMODEM** (poly 0x1021, init 0) over
-  the record bytes, 6 bytes reserved — then fixed **30-byte records**:
+  (6,148 B) must stay below 0x6000 for the contract to hold.
+- *Format:* 16-byte header — magic `RPBK`, u8 version = 1, u8 source
+  (0/1 = user/ZIP block → "RPTBOOK (ZIP)" title; 2 = owner-default
+  block → plain title), u16 record count, u16 **CRC-16/XMODEM**
+  (poly 0x1021, init 0) over the record bytes, 6 bytes reserved —
+  then fixed **30-byte records**:
   name 16 B ASCII (space/NUL padded), rx_hz u32 LE, tx_hz u32 LE
   (0 = same as rx), tx_tone u16, rx_tone u16 (both in the firmware's
   own subaudio encoding: 0 = none, 1–105 = DCS normal table index,

@@ -17,6 +17,15 @@
 //! Enter once (following Chain results, max 4 hops), then for each step:
 //! keys are dispatched with no LCD, waits are Tick events, and a Draw
 //! (with full-screen clear after Enter/Chain) follows state changes.
+//!
+//! It also mirrors the firmware loader's size rules, using the real
+//! segment sizes gen_wrappers.py reads from the built .app packages:
+//! a segment over ARENA_MAX is refused (TooBig), and an oversized
+//! segment (over ARENA_SIZE) must chain straight out of Enter —
+//! returning Continue faults FAULT_OVERSIZE_CONTINUE, and any later
+//! event faults FAULT_OVERSIZE_RESIDENT. Interactive apps therefore
+//! have to fit ARENA_SIZE; oversized segments are transient compute
+//! only (the satellite predict pattern).
 
 use std::path::PathBuf;
 
@@ -84,13 +93,59 @@ fn kind_id(name: &str) -> Option<u8> {
 struct Runner {
     api: bf5rh_abi::Api,
     segments: Vec<AppEntryFn>,
+    /// Real (image_len + bss_len) per segment from the built .app
+    /// package; empty when unknown (loader oversize rules then skipped).
+    seg_sizes: Vec<u32>,
     current: usize,
     out_dir: PathBuf,
     exited: bool,
+    last_was_enter: bool,
 }
 
 impl Runner {
+    fn seg_size(&self) -> u32 {
+        self.seg_sizes.get(self.current).copied().unwrap_or(0)
+    }
+
+    fn seg_oversized(&self) -> bool {
+        self.seg_size() as usize > bf5rh_abi::ARENA_SIZE
+    }
+
+    /// Firmware `load_segment` size gate: a segment above ARENA_MAX is
+    /// refused outright (LoadError::TooBig).
+    fn load_refused(&self) -> bool {
+        let sz = self.seg_size();
+        if sz as usize > bf5rh_abi::ARENA_MAX {
+            state::with(|s| {
+                s.log_event(format!(
+                    "[loader] segment {} is {sz} B > ARENA_MAX {} — firmware refuses the load (TooBig); app never starts",
+                    self.current,
+                    bf5rh_abi::ARENA_MAX
+                ));
+                s.fatal = Some("loader TooBig".into());
+            });
+            return true;
+        }
+        false
+    }
+
     fn call(&mut self, ev: AppEvent) -> AppResult {
+        self.last_was_enter = matches!(ev, AppEvent::Enter);
+        // Firmware backstop (`overlay.rs call`): while an oversized
+        // segment is resident, any non-Enter event faults without the
+        // app ever seeing it (FAULT_OVERSIZE_RESIDENT).
+        if !self.last_was_enter && self.seg_oversized() {
+            state::with(|s| {
+                s.log_event(format!(
+                    "[loader] non-Enter event while oversized segment {} ({} B) is resident — firmware faults FAULT_OVERSIZE_RESIDENT (0xE0000001)",
+                    self.current,
+                    self.seg_size()
+                ));
+                s.fatal = Some("Fault(0xE0000001) oversize-resident".into());
+            });
+            self.exited = true;
+            return AppResult::Fault(0xE000_0001);
+        }
         let entry = self.segments[self.current];
         entry(&self.api, ev)
     }
@@ -101,6 +156,27 @@ impl Runner {
     fn handle(&mut self, mut result: AppResult) {
         let mut hops = 0u8;
         loop {
+            // Firmware `enter_call`: an oversized segment aliases the
+            // bottom of the stack, so it must chain straight out of
+            // Enter. Returning Continue faults with
+            // FAULT_OVERSIZE_CONTINUE and the app is left immediately —
+            // on hardware such an app appears to never launch.
+            if self.last_was_enter
+                && matches!(result, AppResult::Continue)
+                && self.seg_oversized()
+            {
+                state::with(|s| {
+                    s.log_event(format!(
+                        "[loader] segment {} is {} B (> ARENA_SIZE {}): Enter returned Continue — firmware faults FAULT_OVERSIZE_CONTINUE (0xE0000002) and leaves the app; on hardware it never launches",
+                        self.current,
+                        self.seg_size(),
+                        bf5rh_abi::ARENA_SIZE
+                    ));
+                    s.fatal = Some("Fault(0xE0000002) oversize-continue".into());
+                });
+                self.exited = true;
+                return;
+            }
             match result {
                 AppResult::Continue => return,
                 AppResult::Exit => {
@@ -138,6 +214,10 @@ impl Runner {
                         s.backlight_hold = false;
                         // (handoff buffer deliberately kept: it survives Chain)
                     });
+                    if self.load_refused() {
+                        self.exited = true;
+                        return;
+                    }
                     result = self.call(AppEvent::Enter);
                 }
             }
@@ -178,7 +258,7 @@ impl Runner {
     }
 }
 
-pub fn run(segments: &[AppEntryFn], cfg: RunConfig) -> i32 {
+pub fn run(segments: &[AppEntryFn], seg_sizes: &[u32], cfg: RunConfig) -> i32 {
     // ---- build initial state ----
     let mut st = SimState::new();
     if let Some(rf_path) = &cfg.rf_file {
@@ -291,12 +371,17 @@ pub fn run(segments: &[AppEntryFn], cfg: RunConfig) -> i32 {
     let mut runner = Runner {
         api: api::make_api(),
         segments: segments.to_vec(),
+        seg_sizes: seg_sizes.to_vec(),
         current: 0,
         out_dir: cfg.out_dir.clone(),
         exited: false,
+        last_was_enter: false,
     };
 
     // Enter segment 0 (firmware: load, clear-on-draw, reset per-app flags).
+    if runner.load_refused() {
+        return 1;
+    }
     let r = runner.call(AppEvent::Enter);
     runner.handle(r);
     runner.shot("enter");
@@ -477,10 +562,10 @@ pub fn parse_args(app_name: &str, args: &[String]) -> Result<RunConfig, String> 
     Ok(cfg)
 }
 
-pub fn main_for(app_name: &str, segments: &[AppEntryFn]) {
+pub fn main_for(app_name: &str, segments: &[AppEntryFn], seg_sizes: &[u32]) {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match parse_args(app_name, &args) {
-        Ok(cfg) => std::process::exit(run(segments, cfg)),
+        Ok(cfg) => std::process::exit(run(segments, seg_sizes, cfg)),
         Err(e) => {
             eprintln!("[sim] {e}");
             std::process::exit(2);
