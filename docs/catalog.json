@@ -6,7 +6,8 @@
       "file": "firmware/bf5rh-fork1-apx.BF",
       "size": 57108,
       "sha256": "3edf67505ce2c6d44202f715266755c1526614626101462f2f125158d87a63ad",
-      "notes": "bf-5rh + slimmed core with the APX Pro standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+      "notes": "bf-5rh + slimmed core with the APX Pro standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+      "preview": "themeimg/fork1-apx.png"
     },
     {
       "id": "bf5rh-fork1-clean",
@@ -14,7 +15,8 @@
       "file": "firmware/bf5rh-fork1-clean.BF",
       "size": 57176,
       "sha256": "cf329090449b556bb836b4e1de9bc8b1390817116317711a49e991f21e73f13a",
-      "notes": "bf-5rh + slimmed core with the Clean Modern standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+      "notes": "bf-5rh + slimmed core with the Clean Modern standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+      "preview": "themeimg/fork1-clean.png"
     },
     {
       "id": "bf5rh-fork1-dense",
@@ -22,7 +24,8 @@
       "file": "firmware/bf5rh-fork1-dense.BF",
       "size": 56936,
       "sha256": "5cf38268cacf777462013b6d290ff0a174f23c996b2c7b8cec42bba749fede60",
-      "notes": "bf-5rh + slimmed core with the Data Dense standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+      "notes": "bf-5rh + slimmed core with the Data Dense standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+      "preview": "themeimg/fork1-dense.png"
     },
     {
       "id": "bf5rh-fork1-minimal",
@@ -30,7 +33,8 @@
       "file": "firmware/bf5rh-fork1-minimal.BF",
       "size": 54300,
       "sha256": "bed070996edf47138e495d00b586dd2efbc096b4d2f4568c43ab61dc77b60f54",
-      "notes": "bf-5rh + slimmed core with the Minimal Dark standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged)."
+      "notes": "bf-5rh + slimmed core with the Minimal Dark standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
+      "preview": "themeimg/fork1-minimal.png"
     },
     {
       "id": "bf5rh-m0",
@@ -46,8 +50,8 @@
       "id": "actlog",
       "name": "ACTLOG",
       "file": "apps/actlog.app",
-      "size": 10188,
-      "sha256": "45ea08934ebe353d81cb01ae2f72cc646fad92acf3e8bc45518528512b25cafb",
+      "size": 5992,
+      "sha256": "789b64d761067eb3e5aded1a0042e2a75151607f090311866f7d6dcca0c44d18",
       "segments": 1,
       "notes": "Activity logger: scans programmed channels, logs squelch hits (persistent).",
       "icon": "actlog",
@@ -108,8 +112,8 @@
       "id": "rptbook",
       "name": "RPTBOOK",
       "file": "apps/rptbook.app",
-      "size": 10268,
-      "sha256": "a058997f5b01d12ed81aff9ae13bab8797b547f99d488fd9c0f9e196ed5884d8",
+      "size": 6148,
+      "sha256": "97e074fc68b6813b14616cd15e8e3c51ac4ade5809f89c903c26bb79a258fd7a",
       "segments": 1,
       "notes": "Repeater book: Preston's programmed channels as a tuneable directory (accepts injected ZIP data).",
       "icon": "rptbook",

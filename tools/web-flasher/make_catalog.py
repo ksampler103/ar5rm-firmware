@@ -46,21 +46,25 @@ FIRMWARE_META = {
     "bf5rh-fork1-apx.BF": {
         "id": "bf5rh-fork1-apx",
         "name": "Fork 1 — APX Pro theme",
+        "preview": "themeimg/fork1-apx.png",
         "notes": "bf-5rh + slimmed core with the APX Pro standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
     },
     "bf5rh-fork1-clean.BF": {
         "id": "bf5rh-fork1-clean",
         "name": "Fork 1 — Clean Modern theme",
+        "preview": "themeimg/fork1-clean.png",
         "notes": "bf-5rh + slimmed core with the Clean Modern standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
     },
     "bf5rh-fork1-dense.BF": {
         "id": "bf5rh-fork1-dense",
         "name": "Fork 1 — Data Dense theme",
+        "preview": "themeimg/fork1-dense.png",
         "notes": "bf-5rh + slimmed core with the Data Dense standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
     },
     "bf5rh-fork1-minimal.BF": {
         "id": "bf5rh-fork1-minimal",
         "name": "Fork 1 — Minimal Dark theme",
+        "preview": "themeimg/fork1-minimal.png",
         "notes": "bf-5rh + slimmed core with the Minimal Dark standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
     },
 }
@@ -199,14 +203,17 @@ def main() -> int:
     for path in sorted((DOCS / "firmware").glob("*.BF")):
         data = path.read_bytes()
         meta = FIRMWARE_META.get(path.name, {})
-        firmwares.append({
+        fw_entry = {
             "id": meta.get("id", path.stem.lower()),
             "name": meta.get("name", path.name),
             "file": f"firmware/{path.name}",
             "size": len(data),
             "sha256": sha256_hex(data),
             "notes": meta.get("notes", ""),
-        })
+        }
+        if meta.get("preview"):
+            fw_entry["preview"] = meta["preview"]
+        firmwares.append(fw_entry)
 
     apps = []
     for path in sorted((DOCS / "apps").glob("*.app")):
