@@ -169,6 +169,15 @@ APP_META = {
         "usage": "Open WXPANEL and it samples all seven channels and lands on the strongest; use UP/DOWN + MENU to tune manually, * re-runs the auto-scan.",
         "screenshots": ["appimg/wxpanel-1.png"],
     },
+    "timesync.app": {
+        "id": "timesync",
+        "name": "TIMESYNC",
+        "notes": "Clock setter: applies a flasher-written UTC timestamp via utc_set (companion to the SATELLITE panel's Sync radio clock).",
+        "icon": "timesync",
+        "blurb": "Sets the radio's UTC clock from a timestamp the web flasher writes into this app's data block. The CPS protocol has no clock command and the firmware clock lives in RAM only (lost at power-off), so this app is the delivery mechanism: the flasher's SATELLITE panel writes the current time, and opening TIMESYNC once applies it with the ABI's utc_set and shows the time it used. The SATELLITE app needs the clock set before its pass predictions mean anything.",
+        "usage": "In the flasher's SATELLITE panel click “Sync radio clock”, then open TIMESYNC on the radio once — promptly, and again after every power-off.",
+        "screenshots": ["appimg/timesync-1.png", "appimg/timesync-2.png"],
+    },
     "themes.app": {
         "id": "themes",
         "name": "THEMES",

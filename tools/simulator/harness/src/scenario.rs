@@ -3,6 +3,7 @@
 //! A scenario is a line-based script (`#` comments):
 //! ```text
 //! utc 816912000          # wall clock, seconds since 2000-01-01T00:00Z
+//! assertutc 816912000    # fail the run unless harness UTC ≈ this (±2 s)
 //! wait 500               # advance virtual time 500 ms (10 ms ticks)
 //! key DOWN               # key event, kind defaults to "single"
 //! key EXIT long
@@ -408,6 +409,20 @@ pub fn run(segments: &[AppEntryFn], seg_sizes: &[u32], cfg: RunConfig) -> i32 {
                     Err(_) => return bad("utc needs seconds since 2000-01-01"),
                 };
                 state::with(|s| s.set_utc(v));
+            }
+            "assertutc" => {
+                let v: u32 = match rest.parse() {
+                    Ok(v) => v,
+                    Err(_) => return bad("assertutc needs seconds since 2000-01-01"),
+                };
+                let now = state::with(|s| s.utc_now());
+                let diff = now.abs_diff(v);
+                if diff > 2 {
+                    return bad(&format!(
+                        "assertutc failed: harness UTC is {now}, expected {v} (±2 s)"
+                    ));
+                }
+                println!("[scenario] assertutc ok: harness UTC = {now} (expected {v})");
             }
             "wait" => {
                 let ms: u64 = match rest.parse() {

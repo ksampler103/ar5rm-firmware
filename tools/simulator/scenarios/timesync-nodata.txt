@@ -1,0 +1,11 @@
+# timesync with NO injected block: the app must NOT set the clock and
+# must show the "use the web flasher" guidance frame.
+# Run with:
+#   --slot-app 2:apps/timesync.app
+# The harness starts every run at its default wall clock 816940800;
+# assertutc proves the app left it untouched (utc_set never called).
+wait 300
+assertutc 816940800
+shot nodata
+key EXIT
+wait 50

@@ -64,7 +64,7 @@ Build notes:
 Sources live in `custom-apps/<name>/` (standalone cargo projects in the
 upstream app skeleton; built on clt-build-01 from a scratch copy inside
 the upstream tree so the `../../abi` path dep resolves — upstream sources
-were not modified). All four carry build hash `0xDEC616E9` and PASS
+were not modified). All five carry build hash `0xDEC616E9` and PASS
 `check_app.py`.
 
 | File | App name | Segments | Size | SHA-256 | check_app verdict |
@@ -73,6 +73,7 @@ were not modified). All four carry build hash `0xDEC616E9` and PASS
 | `apps/rptbook.app` | RPTBOOK | 1 (segment total 6,060 B, resident) | 6,148 B | `97e074fc68b6813b14616cd15e8e3c51ac4ade5809f89c903c26bb79a258fd7a` | PASS — no oversized segment |
 | `apps/foxhunt.app` | FOXHUNT | 1 (image 4,656 B) | 4,764 B | `cc75095c292b8ce7d9925820b4fd0e969d0e8f705fcf766835ea3cb37ae78d0b` | PASS — all checks OK |
 | `apps/wxpanel.app` | WXPANEL | 1 (image 5,632 B) | 5,740 B | `70f52eb5c0a4d82596d94fc204f2b209bf4730cdd7aa10a7668b994aeb90eb96` | PASS — all checks OK |
+| `apps/timesync.app` | TIMESYNC | 1 (segment total 2,843 B, resident) | 2,931 B | `21baab44f77e7d4c9c8200b6ded7ab1f58437b8d2518bab835062aaf6be19cf8` | PASS — no oversized segment |
 
 **The resident-size rule (root cause of the 2026-11-24 launch failures).**
 A segment whose total (image + bss) is ≤ ARENA_SIZE (8,192 B) is loaded
@@ -201,9 +202,67 @@ on entry it samples all 7 (3 reads each after a 60 ms settle) and
 auto-tunes the strongest, then keeps a live RSSI readout on the tuned
 channel. UP/DOWN + MENU tune manually, `*` re-runs the auto-scan.
 
+### TIMESYNC — radio clock setter (injected TSYN block)
+
+Sets the radio's UTC clock, which the SATELLITE app needs before its
+pass predictions mean anything. Why an app at all: **the CPS protocol
+has no clock command and the 168-byte settings record has no time
+field** (see CPS-SPEC.md §8 note), so the page cannot set the clock
+directly. The only programmatic setter is the ABI's `utc_set`, which
+an overlay app can call — TIMESYNC is that app, fed by the same
+injected-block pattern as RPTBOOK.
+
+**Volatility:** the firmware clock is RAM-only (`App::utc_secs`,
+`UTC_NOT_SET` = 0 until set). It is **lost on power-off** — a fresh
+sync is needed after every power cycle. TIMESYNC's block persists in
+flash, but re-opening TIMESYNC later re-applies the *original*
+timestamp, not the current time; always re-run the page sync so the
+block carries a fresh timestamp, then open TIMESYNC promptly (the
+clock is set from the moment of the page click).
+
+**Page flow** (SATELLITE panel → "Sync radio clock"): the panel shows
+this computer's current UTC ticking live; the click captures
+`Date.now()`, builds the TSYN block, scans the slot headers (reuses
+TIMESYNC's slot, else the first empty slot), then — because
+`APP_WRITE` requires a same-session `APP_ERASE` (CPS-SPEC §7.3) —
+erases, installs the app, verifies it, writes the block at
+slot + 0x6000, and verifies that by read-back, all in one session.
+The operator then opens TIMESYNC once on the radio.
+
+**Injected block contract** (also in the app's `src/main.rs` header;
+the page's `buildTsynBlock` is byte-identical to the reference
+builder `tools/simulator/tools/make_tsyn.py`):
+
+- *Mechanism:* `nor_read` at startup scans the 8 slot headers for the
+  package named `TIMESYNC` and reads the block at `slot_base +
+  0x6000`. The package (2,931 B) stays well below 0x6000.
+- *Format:* 16-byte header — magic `TSYN`, u8 version = 1, u8
+  reserved, u16 payload length = 8, u16 **CRC-16/XMODEM** (poly
+  0x1021, init 0) over the payload bytes, 6 bytes reserved — then the
+  8-byte payload: `utc_secs` u32 LE (seconds since
+  2000-01-01T00:00:00Z, the `utc_set` argument; 0 is the
+  `UTC_NOT_SET` sentinel and is rejected) and `written_unix` u32 LE
+  (Unix seconds when the page wrote the block, informational —
+  shown on the confirmation screen).
+- The app validates magic, version, payload length, CRC, and
+  `utc_secs != 0`. On success it calls `utc_set` and shows
+  "CLOCK SET" with the UTC date/time it set (civil conversion done
+  in-app) plus the written time. With no valid block it shows
+  guidance: "No sync data — use the web flasher: SATELLITE panel ->
+  Sync radio clock". Any key exits.
+
+**Simulator validation (2026-11-24):** `scenarios/timesync-set.txt`
+injects a block for 2026-11-24 16:42:31 UTC
+(`utc_secs = 848853751`) via `--slot-app`/`--slot-data`; the harness's
+new `assertutc` step proves the harness clock equals the payload
+after Enter, and the frame (`examples/timesync-set.png`) shows the
+right date/time. `scenarios/timesync-nodata.txt` runs without a
+block: `assertutc` proves the clock was left untouched and the frame
+(`examples/timesync-nodata.png`) shows the guidance screen.
+
 ## Commit decision
 
-The four `.app` files **are committed** in this directory (`apps/`). They
+The five custom `.app` files **are committed** in this directory (`apps/`). They
 are our own build outputs from GPL-3.0 upstream source, each is only a few
 KB, and committing them means GitHub Pages (or any static host) can serve
 them alongside the flasher page later — Preston's stated direction for this

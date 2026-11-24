@@ -201,6 +201,22 @@
       ]
     },
     {
+      "id": "timesync",
+      "name": "TIMESYNC",
+      "file": "apps/timesync.app",
+      "size": 2931,
+      "sha256": "21baab44f77e7d4c9c8200b6ded7ab1f58437b8d2518bab835062aaf6be19cf8",
+      "segments": 1,
+      "notes": "Clock setter: applies a flasher-written UTC timestamp via utc_set (companion to the SATELLITE panel's Sync radio clock).",
+      "icon": "timesync",
+      "blurb": "Sets the radio's UTC clock from a timestamp the web flasher writes into this app's data block. The CPS protocol has no clock command and the firmware clock lives in RAM only (lost at power-off), so this app is the delivery mechanism: the flasher's SATELLITE panel writes the current time, and opening TIMESYNC once applies it with the ABI's utc_set and shows the time it used. The SATELLITE app needs the clock set before its pass predictions mean anything.",
+      "usage": "In the flasher's SATELLITE panel click \u201cSync radio clock\u201d, then open TIMESYNC on the radio once \u2014 promptly, and again after every power-off.",
+      "screenshots": [
+        "appimg/timesync-1.png",
+        "appimg/timesync-2.png"
+      ]
+    },
+    {
       "id": "wxpanel",
       "name": "WXPANEL",
       "file": "apps/wxpanel.app",

@@ -309,6 +309,21 @@ frame = failure, abort). 5. `CMD_READ @ 0x9000` again and **verify byte 29
 == chosen value** from the read-back, not from the write ACK. 6. `CMD_END`;
 radio reboots with the new lock in force.
 
+### No clock in CPS (recorded 2026-11-24 so nobody re-investigates)
+
+The command set (§4) has **no clock command**, and the 168-byte
+settings record (§8) has **no time field** — the observer lat/lon at
+bytes 32–39 is the only SATELLITE-related state CPS can write. The
+firmware's UTC clock (`App::utc_secs`, seconds since
+2000-01-01T00:00:00Z, `UTC_NOT_SET` = 0 until set) is RAM-only and
+lost on power-off. The only setters are on-radio: the SATELLITE list
+app's keypad entry screen, or any overlay app calling the ABI's
+`utc_set`. The web flasher therefore delivers time by **app data
+injection**: the SATELLITE panel's "Sync radio clock" writes a
+timestamp block into the **TIMESYNC** app's slot (offset 0x6000,
+`TSYN` contract in APPS.md), and opening TIMESYNC once applies it
+via `utc_set`.
+
 ## 9. Source disagreements and traps (flagged)
 
 1. **Settings storage address (brief vs source):** the task brief said the

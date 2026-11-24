@@ -21,7 +21,7 @@ page will use — before any of that touches hardware.
 #    with BF5RH_UPSTREAM / BF5RH_CUSTOM_APPS if yours differ.
 python3 gen_wrappers.py
 
-# 2. Build everything (12 apps).
+# 2. Build everything (13 apps).
 cargo build --workspace
 
 # 3. Run a scenario; frames land in runs/<app>/.
@@ -88,6 +88,8 @@ One step per line (`#` comments):
 ```
 utc 816940800        # set UTC (seconds since 2000-01-01); default is
                      # 2025-11-24 08:00 UTC
+assertutc 816940800  # fail the run unless the harness UTC is within
+                     # ±2 s of the given value (proves utc_set calls)
 wait 500             # advance 500 ms (10 ms ticks, Draw after each)
 key DOWN             # key event: 0-9 * # MENU EXIT UP DOWN VM AB BAND
                      # SIDE1 SIDE2, optional kind press|release|single|
@@ -139,6 +141,7 @@ identity. Nothing returns silent zeros without a note.
 | hello | ✅ spike app; text/rect/circle/line all render |
 | rptbook | ✅ baked list shows Preston's real channels; detail view works; **injected RPBK block replaces the directory** (title shows `RPTBOOK (ZIP)`) |
 | wxpanel | ✅ samples all 7 WX channels, auto-selects 162.475 MHz at −42 dBm |
+| timesync | ✅ injected TSYN block (built by `tools/make_tsyn.py`) sets the harness clock to the payload — `assertutc` proves it and the frame shows 2026-11-24 16:42:31 UTC; with no block the clock is untouched and the guidance frame shows |
 | actlog | ✅ scans his channels, logged a simulated hit (462.5875, −65 dB, 6 s), review screen works, log **persists across processes** via the flash image |
 | fm | ✅ main screen, stepping, seek lands on the next modelled station |
 | settings | ✅ group list → Chain into the radio segment shows his real values (SQL 3, TOT 8) |

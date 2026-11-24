@@ -1,0 +1,12 @@
+# timesync with an injected TSYN block (built by tools/make_tsyn.py).
+# Run with:
+#   --slot-app 2:apps/timesync.app --slot-data 2:0x6000:tsyn-demo.bin
+# Block payload: utc_secs 848853751 = 2026-11-24 16:42:31 UTC,
+# written_unix 1795538551 (the same instant).
+# On Enter the app must call utc_set(848853751); the frame must show
+# 2026-11-24 / 16:42:31 UTC, and assertutc proves the harness clock.
+wait 300
+assertutc 848853751
+shot set
+key EXIT
+wait 50

@@ -68,6 +68,7 @@ APPS = {
     "rptbook": (CUSTOM / "rptbook", ["."], False),
     "foxhunt": (CUSTOM / "foxhunt", ["."], False),
     "wxpanel": (CUSTOM / "wxpanel", ["."], False),
+    "timesync": (CUSTOM / "timesync", ["."], False),
 }
 
 
