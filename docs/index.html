@@ -509,6 +509,12 @@ async function doConnect(){
     S.reader=S.port.readable.getReader();
     S.connected=true;
     readLoop();
+    /* pyserial asserts DTR+RTS by default on open; Web Serial starts with
+       both false. Assert them at connect time to match the Python tools'
+       effective line state — many Prolific PL2303 Baofeng cables gate/power
+       their radio-side level circuitry from these lines. Each operation
+       (Backup included) also re-asserts before it starts. */
+    try{ await S.port.setSignals({dataTerminalReady:true, requestToSend:true}); }catch(se){ /* operations re-assert; a failure here is logged there */ }
     /* SerialPortInfo uses usbVendorId / usbProductId. Read each field
        defensively: a missing field must never fail an otherwise good
        connection (the old code read info.productId, which is always
@@ -595,12 +601,30 @@ async function doBackup(){
   var bar=$("backupProgress"); bar.className="progress show"; bar.firstElementChild.style.width="0%";
   $("backupDownload").className="dl";
   try{
-    clearRx(); await sleep(10);
-    logMsg("Backup: sending ident PROGRAMBFNORMALU (radio must be stock, on, at its main screen).");
+    /* PROTOCOL.md notes radio_read.py "does not set DTR/RTS" — but pyserial
+       asserts DTR and RTS by default when it opens a port, so the Python
+       tool's effective line state is DTR=RTS=true even though its code never
+       mentions them. Web Serial starts with both signals false. Many
+       Prolific PL2303-class Baofeng cables (e.g. "USB-Serial Controller D")
+       gate or parasitically power their radio-side level circuitry from
+       DTR/RTS; with both low the cable is deaf/dumb in both directions —
+       total silence, not garbage. Probe/Flash already asserted these lines;
+       Backup did not. Assert them here to match pyserial's behaviour. */
+    try{
+      await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+      logMsg("Backup: DTR + RTS asserted (matching pyserial's default on open — Prolific cables need these lines high to power their level circuitry). Settling 300 ms before the ident…");
+    }catch(se){
+      logMsg("Backup: could not assert DTR/RTS ("+((se && se.message)?se.message:String(se))+") — continuing anyway; if the radio stays silent, this cable may need those lines high.","warn");
+    }
+    clearRx(); await sleep(300);
+    var preIdent=rxBuf.splice(0, rxBuf.length);
+    if(preIdent.length) logMsg("Backup: heard "+preIdent.length+" byte(s) during the pre-ident settle — the radio/cable chattered before the ident was sent (see hex dump). The ident exchange below is still the deciding test.","warn",Uint8Array.from(preIdent));
+    else logMsg("Backup: pre-ident listen silent — no bytes heard before the ident (normal). A failure after this point means the radio stayed silent in reply to the ident itself.");
     var ident=asciiBytes("PROGRAMBFNORMALU");
+    logMsg("Backup: sending ident PROGRAMBFNORMALU (radio must be stock, on, at its main screen).","",ident);
     await writeBytes(ident);
     var ack=await readExact(1,1500,250);
-    if(!ack) throw new Error("No response from the radio. Check the cable is pushed in hard, the radio is ON at its main screen, and you picked the right port.");
+    if(!ack) throw new Error("No response from the radio — zero bytes back after the ident, with DTR+RTS asserted and the pre-ident listen "+(preIdent.length?("hearing "+preIdent.length+" byte(s)"):"silent")+". Check the cable is pushed in hard, the radio is ON at its main screen, and you picked the right port. Download the log (with hex dump on) before retrying so silence vs. chatter can be told apart.");
     logMsg("Backup: ident reply received.", "", ack);
     if(ack[0]!==0x06) throw new Error("Radio did not acknowledge the ident (expected 0x06, got "+hexByte(ack[0])+"). Is the radio stock and at its main screen?");
     logMsg("Backup: radio acknowledged (0x06).","ok");
