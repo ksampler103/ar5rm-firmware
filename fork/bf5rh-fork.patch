@@ -1,0 +1,2138 @@
+diff --git a/src/app/mod.rs b/src/app/mod.rs
+index 2da991f..4fbefb3 100644
+--- a/src/app/mod.rs
++++ b/src/app/mod.rs
+@@ -164,6 +164,11 @@ pub struct App<'a> {
+ 
+     channel_display_mode: ChannelDisplayMode,
+ 
++    /// Standby UI theme (fork feature): cached copy of the THM1 block in
++    /// app-data flash, read at startup and refreshed whenever standby is
++    /// entered. See `crate::ui::theme`.
++    theme: u8,
++
+     power_save: bool,
+     ps_asleep: bool,
+     ps_idle_ticks: u16,
+@@ -202,6 +207,11 @@ impl<'a> App<'a> {
+             .load_settings()
+             .unwrap_or(flash_map::Settings::DEFAULT);
+         let battery_cal = storage.read_battery_calibration();
++        let theme = {
++            let mut block = [0u8; 6];
++            storage.read_raw(crate::ui::theme::THEME_DATA_ADDR, &mut block);
++            crate::ui::theme::parse_theme_block(&block)
++        };
+ 
+         let mut sides = [
+             side::Side {
+@@ -298,6 +308,7 @@ impl<'a> App<'a> {
+             mode: Mode::Standby,
+             sides,
+             settings,
++            theme,
+             launcher_index: 0,
+             master: 0,
+             watching: 0,
+@@ -363,6 +374,20 @@ impl<'a> App<'a> {
+         ));
+     }
+ 
++    /// Currently selected standby theme id (fork feature).
++    pub fn theme(&self) -> u8 {
++        self.theme
++    }
++
++    /// Re-read the theme block from app-data flash. Called when standby
++    /// is entered so a pick made in the THEMES app applies immediately.
++    pub fn refresh_theme(&mut self) {
++        let mut block = [0u8; 6];
++        self.storage
++            .read_raw(crate::ui::theme::THEME_DATA_ADDR, &mut block);
++        self.theme = crate::ui::theme::parse_theme_block(&block);
++    }
++
+     // UTC wall clock
+     pub fn utc_secs(&self) -> u32 {
+         self.utc_secs
+diff --git a/src/ui/mod.rs b/src/ui/mod.rs
+index cc8f7cd..45e0e17 100644
+--- a/src/ui/mod.rs
++++ b/src/ui/mod.rs
+@@ -1,4 +1,5 @@
+ pub(crate) mod boot;
++pub(crate) mod theme;
+ pub(crate) mod cps;
+ mod icons;
+ mod launcher;
+@@ -113,6 +114,11 @@ pub fn draw(
+         state.standby = standby::Cache::new();
+         state.list = list::Cache::new();
+         state.scan = scan::Cache::new();
++        if mode == app::Mode::Standby {
++            // A theme picked in the THEMES app while we were away must be
++            // live on return; the block lives in app-writable flash.
++            app.refresh_theme();
++        }
+     }
+     state.last_mode = Some(mode);
+     match mode {
+diff --git a/src/ui/standby.rs b/src/ui/standby.rs
+index 726a3e1..0eb716b 100644
+--- a/src/ui/standby.rs
++++ b/src/ui/standby.rs
+@@ -1,3 +1,13 @@
++//! Standby screen, themed (fork feature — see `src/ui/theme.rs`).
++//!
++//! Four layouts share one snapshot/cache core: APX Pro (0, the upstream
++//! geometry with an amber focus border), Clean Modern (1, cards),
++//! Data Dense (2, text grid), Minimal Dark (3, single frequency).
++//! Structural changes trigger the active layout's full redraw; battery,
++//! status, RX and meter dynamics update in place per layout, exactly as
++//! the upstream single-layout code did.
++
++use super::theme::{self, Palette};
+ use super::{icons, TextBuf, SCREEN_H, SCREEN_W};
+ use crate::app::{self, ChannelDisplayMode};
+ use crate::device::radio::{Modulation, Power, SubAudio};
+@@ -11,17 +21,6 @@ use embedded_graphics::prelude::*;
+ use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
+ use embedded_graphics::text::Text;
+ 
+-const BG: Rgb565 = Rgb565::BLACK;
+-const FG: Rgb565 = Rgb565::WHITE;
+-const ACCENT: Rgb565 = Rgb565::new(0, 55, 28);
+-const STATUS_BG: Rgb565 = Rgb565::new(2, 6, 12);
+-const AMBER: Rgb565 = Rgb565::new(31, 50, 0);
+-const ALERT: Rgb565 = Rgb565::new(31, 8, 4);
+-const GREEN: Rgb565 = Rgb565::new(0, 55, 6);
+-const DIM: Rgb565 = Rgb565::new(13, 26, 13);
+-const HAIR: Rgb565 = Rgb565::new(6, 12, 6);
+-const SLAVE: Rgb565 = Rgb565::new(20, 40, 20);
+-
+ const MARGIN: i32 = 6;
+ const RIGHT_MARGIN: i32 = 6;
+ const STRIPE_W: i32 = 3;
+@@ -63,9 +62,10 @@ pub(super) struct Snapshot {
+ 
+ pub(super) struct Cache {
+     structural: Option<Snapshot>,
++    theme: u8,
++    status: Option<StatusState>,
+     battery: Option<(u8, u16)>,
+     rx_status: [Option<RxStatusState>; 2],
+-    tx_elapsed: Option<u32>,
+     meter: Option<MeterState>,
+ }
+ 
+@@ -73,9 +73,10 @@ impl Cache {
+     pub fn new() -> Self {
+         Cache {
+             structural: None,
++            theme: u8::MAX,
++            status: None,
+             battery: None,
+             rx_status: [None, None],
+-            tx_elapsed: None,
+             meter: None,
+         }
+     }
+@@ -105,6 +106,19 @@ struct MeterState {
+     side: Option<u8>,
+ }
+ 
++/// Everything the status area of any layout can show; compared as a
++/// whole so clocks stay minute-fresh and TX timers second-fresh.
++#[derive(Clone, Copy, PartialEq)]
++struct StatusState {
++    transmitting: bool,
++    power_save: bool,
++    dual_standby: bool,
++    vox: bool,
++    key_locked: bool,
++    clock_min: Option<u32>,
++    tx_secs: Option<u32>,
++}
++
+ #[derive(Clone, Copy, PartialEq)]
+ struct SideSnapshot {
+     freq_hz: u32,
+@@ -125,16 +139,6 @@ impl Snapshot {
+         self.tx_prohibited || self.no_channels_notice
+     }
+ 
+-    fn flags(&self) -> (bool, bool, bool, bool, bool) {
+-        (
+-            self.is_transmitting,
+-            self.power_save,
+-            self.dual_standby,
+-            self.vox,
+-            self.key_locked,
+-        )
+-    }
+-
+     fn capture(app: &app::App) -> Self {
+         let is_transmitting = app.is_transmitting();
+         let master_index = app.master_index();
+@@ -177,6 +181,61 @@ impl Snapshot {
+     }
+ }
+ 
++#[inline(never)]
++fn status_state(app: &app::App) -> StatusState {
++    let utc = app.utc_secs();
++    let clock_min = if utc == bf5rh_abi::UTC_NOT_SET {
++        None
++    } else {
++        Some((utc / 60) % 1440)
++    };
++    StatusState {
++        transmitting: app.is_transmitting(),
++        power_save: app.power_save_active(),
++        dual_standby: app.dual_standby_enabled(),
++        vox: app.vox_enabled(),
++        key_locked: app.is_key_locked(),
++        clock_min,
++        tx_secs: app.is_transmitting().then(|| app.tx_elapsed_seconds()),
++    }
++}
++
++/// Signal reading for one side: (kind, dbm when known). Shared by all
++/// themes' dynamic signal fields so the logic exists exactly once.
++#[inline(never)]
++fn signal_reading(app: &app::App, i: usize) -> (RxStatusText, Option<i32>) {
++    match rx_status_kind(app, i) {
++        RxStatusText::Rx => (RxStatusText::Rx, Some(app.rssi_dbm())),
++        RxStatusText::LastSignal => (
++            RxStatusText::LastSignal,
++            app.last_signal_peak().map(|(_, dbm)| dbm),
++        ),
++        RxStatusText::Tx => (RxStatusText::Tx, None),
++        RxStatusText::None => (RxStatusText::None, None),
++    }
++}
++
++#[inline(never)]
++fn rx_status_kind(app: &app::App, i: usize) -> RxStatusText {
++    let is_master = i == app.master_index();
++    let is_watching = i == app.watching_index();
++    let transmitting_here = app.is_transmitting() && is_master;
++    if transmitting_here {
++        RxStatusText::Tx
++    } else if is_watching && (app.is_monitor() || app.rssi_open()) {
++        if app.rx_blink_on() {
++            RxStatusText::Rx
++        } else {
++            RxStatusText::None
++        }
++    } else if app.last_signal_side() == Some(i) {
++        RxStatusText::LastSignal
++    } else {
++        RxStatusText::None
++    }
++}
++
++#[inline(never)]
+ fn fill<D>(lcd: &mut D, x: i32, y: i32, w: i32, h: i32, color: Rgb565)
+ where
+     D: DrawTarget<Color = Rgb565>,
+@@ -190,6 +249,7 @@ where
+         .ok();
+ }
+ 
++#[inline(never)]
+ fn text<D>(
+     lcd: &mut D,
+     s: &str,
+@@ -205,6 +265,7 @@ fn text<D>(
+         .ok();
+ }
+ 
++#[inline(never)]
+ fn text_right<D>(
+     lcd: &mut D,
+     s: &str,
+@@ -218,6 +279,20 @@ fn text_right<D>(
+     text(lcd, s, font, SCREEN_W - RIGHT_MARGIN - w, baseline, color);
+ }
+ 
++#[inline(never)]
++fn text_centered<D>(
++    lcd: &mut D,
++    s: &str,
++    font: &MonoFont,
++    baseline: i32,
++    color: Rgb565,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let w = s.len() as i32 * font.character_size.width as i32;
++    text(lcd, s, font, (SCREEN_W - w) / 2, baseline, color);
++}
++
+ fn band_top(i: usize) -> i32 {
+     if i == 0 {
+         BAND_TOP0
+@@ -226,159 +301,95 @@ fn band_top(i: usize) -> i32 {
+     }
+ }
+ 
+-fn full_redraw<D>(lcd: &mut D, app: &app::App, snap: &Snapshot)
+-where
+-    D: DrawTarget<Color = Rgb565>,
+-{
+-    fill(lcd, 0, 0, SCREEN_W, SCREEN_H, BG);
+-    fill(lcd, 0, 0, SCREEN_W, STATUS_HEIGHT, STATUS_BG);
+-    fill(lcd, 0, STATUS_HEIGHT, SCREEN_W, 1, ACCENT);
+-    fill(lcd, 0, BAND_TOP1 - 1, SCREEN_W, 1, HAIR);
+-    fill(lcd, MARGIN, METER_RULE_Y, SCREEN_W - 2 * MARGIN, 1, HAIR);
++// ---- shared formatting helpers ----
++
++/// "462.67500" — MHz plus five decimals.
++#[inline(never)]
++fn fmt_freq5(freq_hz: u32, out: &mut dyn core::fmt::Write) {
++    write!(
++        out,
++        "{:3}.{:05}",
++        freq_hz / 1_000_000,
++        (freq_hz % 1_000_000) / 10
++    )
++    .ok();
++}
+ 
+-    draw_flags(lcd, app);
+-    for i in 0..2 {
+-        draw_stripe(lcd, snap, i);
+-        draw_row1(lcd, app, i, band_top(i));
+-        draw_row2(lcd, app, i, band_top(i));
+-        draw_row3(lcd, app, i, band_top(i));
+-    }
++/// "162.4750" — MHz plus four decimals.
++#[inline(never)]
++fn fmt_freq4(freq_hz: u32, out: &mut dyn core::fmt::Write) {
++    write!(
++        out,
++        "{:3}.{:04}",
++        freq_hz / 1_000_000,
++        (freq_hz % 1_000_000) / 100
++    )
++    .ok();
++}
+ 
+-    if app.tx_prohibited() {
+-        draw_overlay(lcd, "TX PROHIBITED", ALERT);
+-    } else if app.no_channels_notice() {
+-        draw_overlay(lcd, "NO CHANNELS", AMBER);
++/// " T123.0" / " D023" / " D023I" / "" for a TX subaudio setting.
++#[inline(never)]
++fn fmt_tone_suffix(tx: SubAudio, out: &mut dyn core::fmt::Write) {
++    match tx {
++        SubAudio::Ctcss(t) => {
++            write!(out, " T{}.{}", t / 10, t % 10).ok();
++        }
++        SubAudio::Dcs { code, inverted } => {
++            write!(out, " D{:03o}{}", code, if inverted { "I" } else { "" }).ok();
++        }
++        SubAudio::None => {}
+     }
+ }
+ 
+-pub fn draw_standby<D>(lcd: &mut D, app: &app::App, cache: &mut Cache)
+-where
+-    D: DrawTarget<Color = Rgb565>,
+-{
+-    let snap = Snapshot::capture(app);
+-
+-    let overlay_active = snap.overlay_active();
+-    let prev_overlay_active = cache
+-        .structural
+-        .as_ref()
+-        .map(|p| p.overlay_active())
+-        .unwrap_or(false);
+-    let overlay_content_changed = cache.structural.as_ref().map_or(true, |p| {
+-        p.tx_prohibited != snap.tx_prohibited
+-            || p.no_channels_notice != snap.no_channels_notice
+-    });
+-    let first_frame = cache.structural.is_none();
+-
+-    let did_full_redraw = if overlay_active {
+-        first_frame || !prev_overlay_active || overlay_content_changed
+-    } else {
+-        first_frame || prev_overlay_active
++/// "+5.0" / "-5.0" / "" for a repeater offset.
++#[inline(never)]
++fn fmt_offset_suffix(offset_hz: u32, dir: u8, out: &mut dyn core::fmt::Write) {
++    if offset_hz == 0 {
++        return;
++    }
++    let sign = match dir {
++        1 => "+",
++        2 => "-",
++        _ => "",
+     };
++    write!(
++        out,
++        " {}{}.{}",
++        sign,
++        offset_hz / 1_000_000,
++        (offset_hz % 1_000_000) / 100_000
++    )
++    .ok();
++}
+ 
+-    if did_full_redraw {
+-        full_redraw(lcd, app, &snap);
+-    } else if !overlay_active {
+-        let prev = cache.structural.as_ref().unwrap(); // Some, since !first_frame here
+-
+-        let tx_state_changed = prev.is_transmitting != snap.is_transmitting;
+-        let master_changed = prev.master_index != snap.master_index;
+-
+-        if prev.flags() != snap.flags() {
+-            draw_flags(lcd, app);
+-        }
+-        if snap.is_transmitting {
+-            draw_tx_timer(lcd, app, &mut cache.tx_elapsed, tx_state_changed);
+-        } else if tx_state_changed {
+-            cache.tx_elapsed = None;
+-        }
+-
+-        for i in 0..2usize {
+-            let top = band_top(i);
+-            let p = &prev.sides[i];
+-            let s = &snap.sides[i];
+-            let is_master = i == snap.master_index;
+-            let p_tx_here = prev.is_transmitting && i == prev.master_index;
+-            let s_tx_here = snap.is_transmitting && i == snap.master_index;
+-
+-            if master_changed || p_tx_here != s_tx_here {
+-                draw_stripe(lcd, &snap, i);
+-            }
++/// "03:52" 24-hour clock from minutes-of-day.
++#[inline(never)]
++fn fmt_clock24(min: u32, out: &mut dyn core::fmt::Write) {
++    write!(out, "{:02}:{:02}", min / 60, min % 60).ok();
++}
+ 
+-            let row1_input_changed = if is_master {
+-                prev.channel_input_len != snap.channel_input_len
+-            } else {
+-                prev.dtmf_dial_active != snap.dtmf_dial_active
+-            };
+-            if master_changed
+-                || row1_input_changed
+-                || (p.is_channel_mode, p.channel_num)
+-                    != (s.is_channel_mode, s.channel_num)
+-            {
+-                draw_row1(lcd, app, i, top);
+-            }
++#[inline(never)]
++fn fmt_timer(secs: u32, out: &mut dyn core::fmt::Write) {
++    write!(out, "{:02}:{:02}", secs / 60, secs % 60).ok();
++}
+ 
+-            let row2_input_changed = if is_master {
+-                prev.freq_input_len != snap.freq_input_len
+-            } else {
+-                prev.dtmf_dial_active != snap.dtmf_dial_active
+-                    || (snap.dtmf_dial_active
+-                        && prev.dtmf_dial_len != snap.dtmf_dial_len)
+-            };
+-            if master_changed
+-                || row2_input_changed
+-                || p.freq_hz != s.freq_hz
+-                || (p.is_channel_mode, p.channel_num)
+-                    != (s.is_channel_mode, s.channel_num)
+-            {
+-                draw_row2(lcd, app, i, top);
+-            }
++#[inline(never)]
++fn fmt_volts(cv: u16, out: &mut dyn core::fmt::Write) {
++    write!(out, "{}.{}V", cv / 100, (cv % 100) / 10).ok();
++}
+ 
+-            let row3_input_changed =
+-                !is_master && prev.dtmf_dial_active != snap.dtmf_dial_active;
+-            if master_changed
+-                || row3_input_changed
+-                || p_tx_here != s_tx_here
+-                || (
+-                    p.modulation,
+-                    p.power,
+-                    p.subaudio_tx,
+-                    p.subaudio_rx,
+-                    p.offset_hz,
+-                    p.freq_dir,
+-                    p.wide_band,
+-                    p.reversed,
+-                ) != (
+-                    s.modulation,
+-                    s.power,
+-                    s.subaudio_tx,
+-                    s.subaudio_rx,
+-                    s.offset_hz,
+-                    s.freq_dir,
+-                    s.wide_band,
+-                    s.reversed,
+-                )
+-            {
+-                draw_row3(lcd, app, i, top);
+-            }
++#[inline(never)]
++fn side_label(app: &app::App, i: usize, out: &mut dyn core::fmt::Write) {
++    if app.side_is_channel_mode(i) {
++        let name = app.side_name_str(i);
++        if !name.is_empty() {
++            out.write_str(&name[..name.len().min(12)]).ok();
++            return;
+         }
++        write!(out, "M{:03}", app.side_channel_num(i)).ok();
++    } else {
++        out.write_str("VFO").ok();
+     }
+-    // else: overlay_active and unchanged from last tick -- already fully
+-    // painted, nothing structural to touch.
+-
+-    cache.structural = Some(snap);
+-
+-    draw_battery(lcd, app, &mut cache.battery, did_full_redraw);
+-    for i in 0..2usize {
+-        draw_rx_status(
+-            lcd,
+-            app,
+-            i,
+-            band_top(i),
+-            &mut cache.rx_status[i],
+-            did_full_redraw,
+-        );
+-    }
+-    draw_meter(lcd, app, &mut cache.meter, did_full_redraw);
+ }
+ 
+ fn draw_overlay<D>(lcd: &mut D, label: &str, color: Rgb565)
+@@ -388,7 +399,7 @@ where
+     let width = label.len() as i32 * SMALL_W + 16;
+     let x = (SCREEN_W - width) / 2;
+     let y = SCREEN_H / 2 - 11;
+-    fill(lcd, x, y, width, 22, BG);
++    fill(lcd, x, y, width, 22, Rgb565::BLACK);
+     icons::draw_outline(
+         lcd,
+         Point::new(x, y),
+@@ -405,191 +416,67 @@ where
+     );
+ }
+ 
+-// status bar
+-
+-const FLAGS_W: i32 = 100;
+-
+-fn draw_flags<D>(lcd: &mut D, app: &app::App)
+-where
+-    D: DrawTarget<Color = Rgb565>,
+-{
+-    fill(lcd, 0, 0, FLAGS_W, STATUS_HEIGHT, STATUS_BG);
+-    let baseline = FONT_5X8.baseline as i32 + 2;
+-    let mut x = 4;
+-
+-    if app.is_transmitting() {
+-        render_tx_timer(lcd, app);
+-        x += 5 * SMALL_W + 5;
+-    } else {
+-        for (on, label, color) in [
+-            (app.power_save_active(), "PS", DIM),
+-            (app.dual_standby_enabled(), "DWR", ACCENT),
+-        ] {
+-            if on {
+-                text(lcd, label, &FONT_5X8, x, baseline, color);
+-                x += (label.len() as i32 + 1) * TINY_W;
+-            }
+-        }
+-    }
+-    if app.vox_enabled() {
+-        text(lcd, "VOX", &FONT_5X8, x, baseline, AMBER);
+-        x += 4 * TINY_W;
+-    }
+-    if app.is_key_locked() {
+-        icons::draw_padlock(lcd, x, 2, AMBER);
+-    }
+-}
+-
+-fn render_tx_timer<D>(lcd: &mut D, app: &app::App)
++#[inline(never)]
++fn draw_overlay_for<D>(lcd: &mut D, app: &app::App, pal: Palette)
+ where
+     D: DrawTarget<Color = Rgb565>,
+ {
+-    let secs = app.tx_elapsed_seconds();
+-    let mut buf: TextBuf<8> = TextBuf::new();
+-    write!(buf, "{:02}:{:02}", secs / 60, secs % 60).ok();
+-    text(
+-        lcd,
+-        buf.as_str(),
+-        &FONT_6X10,
+-        4,
+-        FONT_6X10.baseline as i32 + 2,
+-        ALERT,
+-    );
+-}
+-
+-fn draw_tx_timer<D>(
+-    lcd: &mut D,
+-    app: &app::App,
+-    last: &mut Option<u32>,
+-    force: bool,
+-) where
+-    D: DrawTarget<Color = Rgb565>,
+-{
+-    let secs = app.tx_elapsed_seconds();
+-    if !force && *last == Some(secs) {
+-        return;
+-    }
+-    *last = Some(secs);
+-    draw_flags(lcd, app);
+-}
+-
+-fn draw_battery<D>(
+-    lcd: &mut D,
+-    app: &app::App,
+-    last: &mut Option<(u8, u16)>,
+-    force: bool,
+-) where
+-    D: DrawTarget<Color = Rgb565>,
+-{
+-    let state = (app.battery_bars(), app.battery_voltage_cv());
+-    if !force && *last == Some(state) {
+-        return;
++    if app.tx_prohibited() {
++        draw_overlay(lcd, "TX PROHIBITED", pal.alert);
++    } else if app.no_channels_notice() {
++        draw_overlay(lcd, "NO CHANNELS", pal.amber);
+     }
+-    *last = Some(state);
+-    let (bars, cv) = state;
+-
+-    let icon_x = SCREEN_W - RIGHT_MARGIN - icons::BATTERY_W;
+-    fill(
+-        lcd,
+-        FLAGS_W,
+-        0,
+-        SCREEN_W - FLAGS_W,
+-        STATUS_HEIGHT,
+-        STATUS_BG,
+-    );
+-
+-    let mut volts: TextBuf<8> = TextBuf::new();
+-    write!(volts, "{}.{:02}V", cv / 100, cv % 100).ok();
+-    let volts = volts.as_str();
+-    text(
+-        lcd,
+-        volts,
+-        &FONT_5X8,
+-        icon_x - 4 - volts.len() as i32 * TINY_W,
+-        FONT_5X8.baseline as i32 + 2,
+-        DIM,
+-    );
+-    let charge = match bars {
+-        0 | 1 => ALERT,
+-        2 => AMBER,
+-        _ => GREEN,
+-    };
+-    icons::draw_battery(lcd, icon_x, 1, bars, DIM, charge);
+ }
+ 
+-// bands
++// ---- dispatch ----
+ 
+-fn draw_stripe<D>(lcd: &mut D, snap: &Snapshot, i: usize)
++pub fn draw_standby<D>(lcd: &mut D, app: &app::App, cache: &mut Cache)
+ where
+     D: DrawTarget<Color = Rgb565>,
+ {
+-    let master = i == snap.master_index;
+-    let color = if snap.is_transmitting && master {
+-        ALERT
+-    } else if master {
+-        ACCENT
+-    } else {
+-        HAIR
+-    };
+-    fill(lcd, 0, band_top(i), STRIPE_W, BAND_HEIGHT, color);
+-}
++    let snap = Snapshot::capture(app);
++    let theme = app.theme();
++    let pal = theme::palette(theme);
+ 
+-fn draw_rx_status<D>(
+-    lcd: &mut D,
+-    app: &app::App,
+-    i: usize,
+-    top: i32,
+-    last: &mut Option<RxStatusState>,
+-    force: bool,
+-) where
+-    D: DrawTarget<Color = Rgb565>,
+-{
+-    let is_master = i == app.master_index();
+-    let is_watching = i == app.watching_index();
+-    let transmitting_here = app.is_transmitting() && is_master;
++    let structural_changed =
++        cache.theme != theme || cache.structural.as_ref() != Some(&snap);
++    let overlay_active = snap.overlay_active();
+ 
+-    let text_kind = if transmitting_here {
+-        RxStatusText::Tx
+-    } else if is_watching && (app.is_monitor() || app.rssi_open()) {
+-        if app.rx_blink_on() {
+-            RxStatusText::Rx
+-        } else {
+-            RxStatusText::None
++    // While an overlay notice is up and nothing changed, the painted
++    // frame stands (upstream behaviour); dynamics below still run.
++    // THEME_MINIMAL (3) is reserved but not built into this firmware
++    // (flash budget - see fork/FORK.md); the id renders as APX Pro.
++    let did_full = if overlay_active && !structural_changed {
++        false
++    } else if structural_changed {
++        match theme {
++            theme::THEME_CLEAN => clean_full(lcd, app, &snap, pal),
++            theme::THEME_DENSE => dense_full(lcd, app, &snap, pal),
++            _ => apx_full(lcd, app, &snap, pal),
+         }
+-    } else if app.last_signal_side() == Some(i) {
+-        RxStatusText::LastSignal
++        true
+     } else {
+-        RxStatusText::None
++        false
+     };
+ 
+-    let state = RxStatusState { text: text_kind };
+-    if !force && *last == Some(state) {
+-        return;
+-    }
+-    *last = Some(state);
++    cache.structural = Some(snap);
++    cache.theme = theme;
+ 
+-    fill(lcd, CONTENT_X, top, LABEL_X - CONTENT_X, ROW1_H, BG);
+-    let (label, color) = match text_kind {
+-        RxStatusText::Tx => ("TX", ALERT),
+-        RxStatusText::Rx => ("RX", GREEN),
+-        RxStatusText::LastSignal => (">>", AMBER),
+-        RxStatusText::None => return,
+-    };
+-    text(
+-        lcd,
+-        label,
+-        &FONT_6X10,
+-        MARGIN,
+-        top + FONT_6X10.baseline as i32 + 2,
+-        color,
+-    );
++    match theme {
++        theme::THEME_CLEAN => clean_dyn(lcd, app, pal, cache, did_full),
++        theme::THEME_DENSE => dense_dyn(lcd, app, pal, cache, did_full),
++        _ => apx_dyn(lcd, app, pal, cache, did_full),
++    }
+ }
+ 
+-fn draw_row1<D>(lcd: &mut D, app: &app::App, i: usize, top: i32)
++// ---- shared band rows (APX geometry; palette-threaded upstream code) ----
++
++#[inline(never)]
++fn draw_row1<D>(lcd: &mut D, app: &app::App, i: usize, top: i32, pal: Palette)
+ where
+     D: DrawTarget<Color = Rgb565>,
+ {
+-    fill(lcd, LABEL_X, top, SCREEN_W - LABEL_X, ROW1_H, BG);
++    fill(lcd, LABEL_X, top, SCREEN_W - LABEL_X, ROW1_H, pal.bg);
+     let is_master = i == app.master_index();
+     let baseline = top + FONT_6X10.baseline as i32 + 2;
+ 
+@@ -597,7 +484,7 @@ where
+         return;
+     }
+     if is_master && app.channel_input_len() > 0 {
+-        draw_channel_number_input(lcd, app, baseline);
++        draw_channel_number_input(lcd, app, baseline, pal);
+         return;
+     }
+ 
+@@ -613,7 +500,7 @@ where
+         &FONT_6X10,
+         LABEL_X,
+         baseline,
+-        if is_master { ACCENT } else { DIM },
++        if is_master { pal.accent } else { pal.dim },
+     );
+ 
+     if app.channel_display_mode() == ChannelDisplayMode::Frequency {
+@@ -625,25 +512,26 @@ where
+                 name,
+                 &FONT_5X8,
+                 top + FONT_5X8.baseline as i32 + 3,
+-                DIM,
++                pal.dim,
+             );
+         }
+     }
+ }
+ 
+-fn draw_row2<D>(lcd: &mut D, app: &app::App, i: usize, top: i32)
++#[inline(never)]
++fn draw_row2<D>(lcd: &mut D, app: &app::App, i: usize, top: i32, pal: Palette)
+ where
+     D: DrawTarget<Color = Rgb565>,
+ {
+     let y = top + ROW1_H;
+-    fill(lcd, CONTENT_X, y, SCREEN_W - CONTENT_X, ROW2_H, BG);
++    fill(lcd, CONTENT_X, y, SCREEN_W - CONTENT_X, ROW2_H, pal.bg);
+     let is_master = i == app.master_index();
+     let transmitting_here = app.is_transmitting() && is_master;
+     let baseline = y + FONT_9X18.baseline as i32 + 3;
+     let channel_mode = app.side_is_channel_mode(i);
+     let name = app.side_name_str(i);
+     let has_name = channel_mode && !name.is_empty();
+-    let fg = if is_master { FG } else { SLAVE };
++    let fg = if is_master { pal.fg } else { pal.slave };
+ 
+     let freq_hz = if transmitting_here {
+         app.side_tx_freq_hz(i)
+@@ -652,9 +540,9 @@ where
+     };
+ 
+     if is_master && app.freq_input_len() > 0 {
+-        draw_freq_input(lcd, app, baseline);
++        draw_freq_input(lcd, app, baseline, pal);
+     } else if !is_master && app.dtmf_dial_active() {
+-        draw_dtmf_dial_input(lcd, app, y + FONT_6X10.baseline as i32 + 5);
++        draw_dtmf_dial_input(lcd, app, y + FONT_6X10.baseline as i32 + 5, pal);
+     } else {
+         match app.channel_display_mode() {
+             ChannelDisplayMode::NameFreq if has_name => {
+@@ -662,13 +550,7 @@ where
+                 let name_y = y + FONT_6X10.baseline as i32 + 1;
+                 text_right(lcd, shown, &FONT_6X10, name_y, fg);
+                 let mut freq_line: TextBuf<12> = TextBuf::new();
+-                write!(
+-                    freq_line,
+-                    "{:3}.{:05}",
+-                    freq_hz / 1_000_000,
+-                    (freq_hz % 1_000_000) / 10
+-                )
+-                .ok();
++                fmt_freq5(freq_hz, &mut freq_line);
+                 text_right(
+                     lcd,
+                     freq_line.as_str(),
+@@ -686,17 +568,25 @@ where
+     }
+ }
+ 
+-fn draw_row3<D>(lcd: &mut D, app: &app::App, i: usize, top: i32)
++#[inline(never)]
++fn draw_row3<D>(lcd: &mut D, app: &app::App, i: usize, top: i32, pal: Palette)
+ where
+     D: DrawTarget<Color = Rgb565>,
+ {
+     let y = top + ROW1_H + ROW2_H;
+-    fill(lcd, CONTENT_X, y, SCREEN_W - CONTENT_X, ROW3_H, BG);
++    fill(lcd, CONTENT_X, y, SCREEN_W - CONTENT_X, ROW3_H, pal.bg);
+     if i == app.master_index() || !app.dtmf_dial_active() {
+-        draw_mode_line(lcd, app, i, y + FONT_5X8.baseline as i32 + 2);
++        draw_mode_line(lcd, app, i, y + FONT_5X8.baseline as i32 + 2, pal);
+     }
+ }
+ 
++const FREQ_BIG_CHARS: i32 = 7; // "462.675" in FONT_9X18
++const FREQ_TAIL_CHARS: i32 = 2; // "00" in FONT_6X10
++
++fn freq_pixel_width() -> i32 {
++    FREQ_BIG_CHARS * BIG_W + FREQ_TAIL_CHARS * SMALL_W
++}
++
+ pub(crate) fn draw_frequency<D>(
+     lcd: &mut D,
+     freq_hz: u32,
+@@ -704,9 +594,23 @@ pub(crate) fn draw_frequency<D>(
+     color: Rgb565,
+ ) where
+     D: DrawTarget<Color = Rgb565>,
++{
++    let x = SCREEN_W - RIGHT_MARGIN - freq_pixel_width();
++    draw_frequency_at(lcd, freq_hz, x, baseline_y, color);
++}
++
++#[inline(never)]
++fn draw_frequency_at<D>(
++    lcd: &mut D,
++    freq_hz: u32,
++    x: i32,
++    baseline_y: i32,
++    color: Rgb565,
++) where
++    D: DrawTarget<Color = Rgb565>,
+ {
+     let mhz = freq_hz / 1_000_000;
+-    let frac = (freq_hz % 1_000_000) / 10; // 5 fractional digits (kHz + 2 extra)
++    let frac = (freq_hz % 1_000_000) / 10; // 5 fractional digits
+ 
+     let mut head: TextBuf<8> = TextBuf::new();
+     write!(head, "{:3}.{:03}", mhz, frac / 100).ok();
+@@ -714,9 +618,6 @@ pub(crate) fn draw_frequency<D>(
+     write!(tail, "{:02}", frac % 100).ok();
+ 
+     let head_w = head.as_str().len() as i32 * BIG_W;
+-    let tail_w = tail.as_str().len() as i32 * SMALL_W;
+-    let x = SCREEN_W - RIGHT_MARGIN - tail_w - head_w;
+-
+     text(lcd, head.as_str(), &FONT_9X18, x, baseline_y, color);
+     text(
+         lcd,
+@@ -728,23 +629,25 @@ pub(crate) fn draw_frequency<D>(
+     );
+ }
+ 
+-/// Mid-entry VFO frequency: `"xxx.x--"`
+-fn draw_freq_input<D>(lcd: &mut D, app: &app::App, baseline_y: i32)
++fn draw_frequency_centered<D>(
++    lcd: &mut D,
++    freq_hz: u32,
++    baseline_y: i32,
++    color: Rgb565,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let x = (SCREEN_W - freq_pixel_width()) / 2;
++    draw_frequency_at(lcd, freq_hz, x, baseline_y, color);
++}
++
++/// Mid-entry VFO frequency: `"xxx.x--"` (right-aligned, APX geometry).
++fn draw_freq_input<D>(lcd: &mut D, app: &app::App, baseline_y: i32, pal: Palette)
+ where
+     D: DrawTarget<Color = Rgb565>,
+ {
+-    let len = app.freq_input_len();
+     let mut buf: TextBuf<8> = TextBuf::new();
+-    for pos in 0..6usize {
+-        if pos == 3 {
+-            write!(buf, ".").ok();
+-        }
+-        if pos < len {
+-            write!(buf, "{}", app.freq_input_digit(pos) as u32).ok();
+-        } else {
+-            write!(buf, "-").ok();
+-        }
+-    }
++    freq_input_text(app, &mut buf);
+     let w = buf.as_str().len() as i32 * BIG_W;
+     text(
+         lcd,
+@@ -752,16 +655,28 @@ where
+         &FONT_9X18,
+         SCREEN_W - RIGHT_MARGIN - w,
+         baseline_y,
+-        AMBER,
++        pal.amber,
+     );
+ }
+ 
+-fn draw_channel_number_input<D>(lcd: &mut D, app: &app::App, baseline_y: i32)
+-where
+-    D: DrawTarget<Color = Rgb565>,
+-{
++#[inline(never)]
++fn freq_input_text(app: &app::App, buf: &mut dyn core::fmt::Write) {
++    let len = app.freq_input_len();
++    for pos in 0..6usize {
++        if pos == 3 {
++            write!(buf, ".").ok();
++        }
++        if pos < len {
++            write!(buf, "{}", app.freq_input_digit(pos) as u32).ok();
++        } else {
++            write!(buf, "-").ok();
++        }
++    }
++}
++
++#[inline(never)]
++fn channel_input_text(app: &app::App, buf: &mut dyn core::fmt::Write) {
+     let len = app.channel_input_len();
+-    let mut buf: TextBuf<8> = TextBuf::new();
+     write!(buf, "M").ok();
+     for pos in 0..3usize {
+         if pos + len < 3 {
+@@ -770,16 +685,25 @@ where
+             write!(buf, "{}", app.freq_input_digit(pos + len - 3) as u32).ok();
+         }
+     }
+-    text(lcd, buf.as_str(), &FONT_6X10, LABEL_X, baseline_y, AMBER);
+ }
+ 
+-fn draw_dtmf_dial_input<D>(lcd: &mut D, app: &app::App, baseline_y: i32)
+-where
++fn draw_channel_number_input<D>(
++    lcd: &mut D,
++    app: &app::App,
++    baseline_y: i32,
++    pal: Palette,
++) where
+     D: DrawTarget<Color = Rgb565>,
+ {
++    let mut buf: TextBuf<8> = TextBuf::new();
++    channel_input_text(app, &mut buf);
++    text(lcd, buf.as_str(), &FONT_6X10, LABEL_X, baseline_y, pal.amber);
++}
++
++#[inline(never)]
++fn dtmf_dial_text(app: &app::App, buf: &mut dyn core::fmt::Write) {
+     let len = app.dtmf_dial_len();
+     let cap = app.dtmf_dial_capacity();
+-    let mut buf: TextBuf<17> = TextBuf::new();
+     write!(buf, ">").ok();
+     for pos in 0..cap {
+         if pos < len {
+@@ -788,9 +712,22 @@ where
+             write!(buf, "-").ok();
+         }
+     }
+-    text(lcd, buf.as_str(), &FONT_6X10, MARGIN, baseline_y, AMBER);
+ }
+ 
++fn draw_dtmf_dial_input<D>(
++    lcd: &mut D,
++    app: &app::App,
++    baseline_y: i32,
++    pal: Palette,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let mut buf: TextBuf<17> = TextBuf::new();
++    dtmf_dial_text(app, &mut buf);
++    text(lcd, buf.as_str(), &FONT_6X10, MARGIN, baseline_y, pal.amber);
++}
++
++#[inline(never)]
+ fn tone_mode_label(tx: SubAudio, rx: SubAudio) -> &'static str {
+     match (tx, rx) {
+         (SubAudio::None, SubAudio::None) => "",
+@@ -812,16 +749,20 @@ fn tone_mode_label(tx: SubAudio, rx: SubAudio) -> &'static str {
+     }
+ }
+ 
+-fn draw_mode_line<D>(lcd: &mut D, app: &app::App, i: usize, baseline_y: i32)
+-where
++#[inline(never)]
++fn draw_mode_line<D>(
++    lcd: &mut D,
++    app: &app::App,
++    i: usize,
++    baseline_y: i32,
++    pal: Palette,
++) where
+     D: DrawTarget<Color = Rgb565>,
+ {
+     let modulation = match app.side_modulation(i) {
+         Modulation::Fm => "FM",
+         Modulation::Am => "AM",
+         Modulation::Usb => "USB",
+-        // Unreachable app-side (CW out of scope for this v1); kept only
+-        // because `Modulation` is shared with `drivers::fd6818b`.
+         Modulation::Cw => "CW",
+         Modulation::Cwf => "CWF",
+     };
+@@ -841,15 +782,15 @@ where
+     };
+ 
+     let fields = [
+-        (modulation, DIM),
+-        (power, FG),
++        (modulation, pal.dim),
++        (power, pal.fg),
+         (
+             tone_mode_label(app.side_subaudio_tx(i), app.side_subaudio_rx(i)),
+-            ACCENT,
++            pal.accent,
+         ),
+-        (dir, DIM),
+-        (if app.side_wide_band(i) { "WIDE" } else { "NAR" }, DIM),
+-        (if app.side_reversed(i) { "R" } else { "" }, ALERT),
++        (dir, pal.dim),
++        (if app.side_wide_band(i) { "WIDE" } else { "NAR" }, pal.dim),
++        (if app.side_reversed(i) { "R" } else { "" }, pal.alert),
+     ];
+ 
+     let mut x = MARGIN;
+@@ -872,7 +813,7 @@ fn dtmf_char(v: u8) -> char {
+     }
+ }
+ 
+-// bottom meter
++// ---- bottom meter (shared state; APX rendering) ----
+ 
+ const SEG_PITCH: i32 = 5;
+ const SEG_W: i32 = 4;
+@@ -883,28 +824,29 @@ const S_METER_BAR_X: i32 =
+     SCREEN_W - RIGHT_MARGIN - S_METER_SEGS as i32 * SEG_PITCH + 1;
+ const MIC_BAR_X: i32 = MARGIN + 22;
+ 
+-fn draw_seg<D>(lcd: &mut D, x: i32, base_y: i32, i: u8, fixed: Option<Rgb565>)
+-where
++#[inline(never)]
++fn draw_seg<D>(
++    lcd: &mut D,
++    x: i32,
++    base_y: i32,
++    i: u8,
++    fixed: Option<Rgb565>,
++    pal: Palette,
++) where
+     D: DrawTarget<Color = Rgb565>,
+ {
+     let h = (i as i32 + 1).min(SEG_MAX_H);
+     let color = fixed.unwrap_or(if i < 9 {
+-        GREEN
++        pal.green
+     } else if i < 12 {
+-        AMBER
++        pal.amber
+     } else {
+-        ALERT
++        pal.alert
+     });
+-    fill(
+-        lcd,
+-        x + i as i32 * SEG_PITCH,
+-        base_y - h + 1,
+-        SEG_W,
+-        h,
+-        color,
+-    );
++    fill(lcd, x + i as i32 * SEG_PITCH, base_y - h + 1, SEG_W, h, color);
+ }
+ 
++#[inline(never)]
+ fn draw_bar<D>(
+     lcd: &mut D,
+     x: i32,
+@@ -912,12 +854,13 @@ fn draw_bar<D>(
+     level: u8,
+     total: u8,
+     fixed: Option<Rgb565>,
++    pal: Palette,
+ ) where
+     D: DrawTarget<Color = Rgb565>,
+ {
+     for i in 0..total {
+         if i < level {
+-            draw_seg(lcd, x, base_y, i, fixed);
++            draw_seg(lcd, x, base_y, i, fixed, pal);
+         } else {
+             let h = (i as i32 + 1).min(SEG_MAX_H);
+             fill(
+@@ -926,15 +869,17 @@ fn draw_bar<D>(
+                 base_y - h + 1,
+                 SEG_W,
+                 h,
+-                HAIR,
++                pal.hair,
+             );
+         }
+     }
+ }
+ 
++#[inline(never)]
+ fn meter_state(app: &app::App) -> MeterState {
+     if app.is_transmitting() {
+-        let level = ((app.mic_level() as u16 * MIC_BAR_SEGS as u16 + 127) / 255)
++        let level = ((app.mic_level() as u16 * MIC_BAR_SEGS as u16 + 127)
++            / 255)
+             .min(MIC_BAR_SEGS as u16) as u8;
+         return MeterState {
+             tx: true,
+@@ -983,9 +928,211 @@ fn meter_state(app: &app::App) -> MeterState {
+     }
+ }
+ 
+-fn draw_meter<D>(
++// ---- theme 0: APX Pro ----
++
++#[inline(never)]
++fn apx_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
++where
++    D: DrawTarget<Color = Rgb565>,
++{
++    fill(lcd, 0, 0, SCREEN_W, SCREEN_H, pal.bg);
++    fill(lcd, 0, 0, SCREEN_W, STATUS_HEIGHT, pal.panel);
++    fill(lcd, 0, STATUS_HEIGHT, SCREEN_W, 1, pal.hair);
++    fill(lcd, 0, BAND_TOP1 - 1, SCREEN_W, 1, pal.hair);
++    fill(lcd, MARGIN, METER_RULE_Y, SCREEN_W - 2 * MARGIN, 1, pal.hair);
++
++    // Focus border around the master band (amber per the mockup; red
++    // while it is the transmitting side).
++    let master = snap.master_index;
++    let border = if snap.is_transmitting {
++        pal.alert
++    } else {
++        pal.accent
++    };
++    icons::draw_outline(
++        lcd,
++        Point::new(0, band_top(master)),
++        Size::new(SCREEN_W as u32, BAND_HEIGHT as u32),
++        border,
++    );
++
++    for i in 0..2 {
++        draw_row1(lcd, app, i, band_top(i), pal);
++        draw_row2(lcd, app, i, band_top(i), pal);
++        draw_row3(lcd, app, i, band_top(i), pal);
++    }
++
++    draw_overlay_for(lcd, app, pal);
++}
++
++const FLAGS_W: i32 = 100;
++
++#[inline(never)]
++fn apx_dyn<D>(
++    lcd: &mut D,
++    app: &app::App,
++    pal: Palette,
++    cache: &mut Cache,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    apx_status(lcd, app, pal, &mut cache.status, force);
++    apx_battery(lcd, app, pal, &mut cache.battery, force);
++    for i in 0..2usize {
++        apx_rx_status(lcd, app, i, band_top(i), pal, &mut cache.rx_status[i], force);
++    }
++    apx_meter(lcd, app, pal, &mut cache.meter, force);
++}
++
++fn apx_status<D>(
++    lcd: &mut D,
++    app: &app::App,
++    pal: Palette,
++    last: &mut Option<StatusState>,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let st = status_state(app);
++    if !force && *last == Some(st) {
++        return;
++    }
++    *last = Some(st);
++    fill(lcd, 0, 0, FLAGS_W, STATUS_HEIGHT, pal.panel);
++
++    if st.transmitting {
++        let secs = st.tx_secs.unwrap_or(0);
++        let mut buf: TextBuf<8> = TextBuf::new();
++        fmt_timer(secs, &mut buf);
++        text(
++            lcd,
++            buf.as_str(),
++            &FONT_6X10,
++            4,
++            FONT_6X10.baseline as i32 + 2,
++            pal.alert,
++        );
++        return;
++    }
++
++    let mut x = 4;
++    if let Some(min) = st.clock_min {
++        let mut clock: TextBuf<8> = TextBuf::new();
++        fmt_clock24(min, &mut clock);
++        text(
++            lcd,
++            clock.as_str(),
++            &FONT_6X10,
++            x,
++            FONT_6X10.baseline as i32 + 2,
++            pal.dim,
++        );
++        x += 5 * SMALL_W + 5;
++    }
++    let baseline = FONT_5X8.baseline as i32 + 2;
++    for (on, label, color) in [
++        (st.power_save, "PS", pal.dim),
++        (st.dual_standby, "DWR", pal.accent),
++    ] {
++        if on && x + (label.len() as i32 + 1) * TINY_W <= FLAGS_W {
++            text(lcd, label, &FONT_5X8, x, baseline, color);
++            x += (label.len() as i32 + 1) * TINY_W;
++        }
++    }
++    if st.vox && x + 4 * TINY_W <= FLAGS_W {
++        text(lcd, "VOX", &FONT_5X8, x, baseline, pal.amber);
++        x += 4 * TINY_W;
++    }
++    if st.key_locked && x + 8 <= FLAGS_W {
++        icons::draw_padlock(lcd, x, 2, pal.amber);
++    }
++}
++
++fn apx_battery<D>(
+     lcd: &mut D,
+     app: &app::App,
++    pal: Palette,
++    last: &mut Option<(u8, u16)>,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let state = (app.battery_bars(), app.battery_voltage_cv());
++    if !force && *last == Some(state) {
++        return;
++    }
++    *last = Some(state);
++    let (bars, cv) = state;
++
++    let icon_x = SCREEN_W - RIGHT_MARGIN - icons::BATTERY_W;
++    fill(
++        lcd,
++        FLAGS_W,
++        0,
++        SCREEN_W - FLAGS_W,
++        STATUS_HEIGHT,
++        pal.panel,
++    );
++
++    let mut volts: TextBuf<8> = TextBuf::new();
++    write!(volts, "{}.{:02}V", cv / 100, cv % 100).ok();
++    let volts = volts.as_str();
++    text(
++        lcd,
++        volts,
++        &FONT_5X8,
++        icon_x - 4 - volts.len() as i32 * TINY_W,
++        FONT_5X8.baseline as i32 + 2,
++        pal.dim,
++    );
++    let charge = match bars {
++        0 | 1 => pal.alert,
++        2 => pal.amber,
++        _ => pal.green,
++    };
++    icons::draw_battery(lcd, icon_x, 1, bars, pal.dim, charge);
++}
++
++fn apx_rx_status<D>(
++    lcd: &mut D,
++    app: &app::App,
++    i: usize,
++    top: i32,
++    pal: Palette,
++    last: &mut Option<RxStatusState>,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let kind = rx_status_kind(app, i);
++    let state = RxStatusState { text: kind };
++    if !force && *last == Some(state) {
++        return;
++    }
++    *last = Some(state);
++
++    fill(lcd, CONTENT_X, top, LABEL_X - CONTENT_X, ROW1_H, pal.bg);
++    let (label, color) = match kind {
++        RxStatusText::Tx => ("TX", pal.alert),
++        RxStatusText::Rx => ("RX", pal.green),
++        RxStatusText::LastSignal => (">>", pal.amber),
++        RxStatusText::None => return,
++    };
++    text(
++        lcd,
++        label,
++        &FONT_6X10,
++        MARGIN,
++        top + FONT_6X10.baseline as i32 + 2,
++        color,
++    );
++}
++
++fn apx_meter<D>(
++    lcd: &mut D,
++    app: &app::App,
++    pal: Palette,
+     last: &mut Option<MeterState>,
+     force: bool,
+ ) where
+@@ -1015,15 +1162,15 @@ fn draw_meter<D>(
+             .map_or(true, |p| (p.level, p.live) != (state.level, state.live));
+ 
+     if mode_changed {
+-        fill(lcd, 0, METER_TOP, SCREEN_W, METER_H, BG);
++        fill(lcd, 0, METER_TOP, SCREEN_W, METER_H, pal.bg);
+     }
+     let base_y = METER_TOP + METER_H - 2;
+     let baseline = METER_TOP + FONT_5X8.baseline as i32 + 3;
+ 
+     if state.tx {
+         if text_changed {
+-            fill(lcd, 0, METER_TOP, MIC_BAR_X - 2, METER_H, BG);
+-            text(lcd, "MIC", &FONT_5X8, MARGIN, baseline, ALERT);
++            fill(lcd, 0, METER_TOP, MIC_BAR_X - 2, METER_H, pal.bg);
++            text(lcd, "MIC", &FONT_5X8, MARGIN, baseline, pal.alert);
+         }
+         if level_changed {
+             draw_bar(
+@@ -1032,14 +1179,15 @@ fn draw_meter<D>(
+                 base_y,
+                 state.level,
+                 MIC_BAR_SEGS,
+-                Some(ALERT),
++                Some(pal.alert),
++                pal,
+             );
+         }
+         return;
+     }
+ 
+     if text_changed {
+-        fill(lcd, 0, METER_TOP, S_METER_BAR_X - 3, METER_H, BG);
++        fill(lcd, 0, METER_TOP, S_METER_BAR_X - 3, METER_H, pal.bg);
+         let mut line: TextBuf<20> = TextBuf::new();
+         if !state.live {
+             line.write_str("LAST ").ok();
+@@ -1068,7 +1216,7 @@ fn draw_meter<D>(
+             &FONT_5X8,
+             MARGIN,
+             baseline,
+-            if state.live { FG } else { DIM },
++            if state.live { pal.fg } else { pal.dim },
+         );
+     }
+     if level_changed {
+@@ -1080,12 +1228,580 @@ fn draw_meter<D>(
+                 state.level,
+                 S_METER_SEGS,
+                 None,
++                pal,
+             );
+         } else {
+-            draw_bar(lcd, S_METER_BAR_X, base_y, 0, S_METER_SEGS, None);
++            draw_bar(lcd, S_METER_BAR_X, base_y, 0, S_METER_SEGS, None, pal);
+             if state.level > 0 {
+-                draw_seg(lcd, S_METER_BAR_X, base_y, state.level - 1, None);
++                draw_seg(lcd, S_METER_BAR_X, base_y, state.level - 1, None, pal);
++            }
++        }
++    }
++}
++
++// ---- theme 1: Clean Modern ----
++
++const CLEAN_CARD_X: i32 = 2;
++const CLEAN_BIG_Y: i32 = 19;
++const CLEAN_BIG_H: i32 = 55;
++const CLEAN_SMALL_Y: i32 = 77;
++const CLEAN_SMALL_H: i32 = 31;
++
++#[inline(never)]
++fn clean_info_line(app: &app::App, i: usize, out: &mut TextBuf<40>) {
++    let offset = app.side_offset_hz(i);
++    if offset == 0 {
++        out.write_str("Simplex").ok();
++    } else {
++        let sign = match app.side_freq_dir(i) {
++            1 => "+",
++            2 => "-",
++            _ => "",
++        };
++        write!(out, "Rpt {}{}", sign, offset / 1_000_000).ok();
++        let tenth = (offset % 1_000_000) / 100_000;
++        if tenth > 0 {
++            write!(out, ".{}", tenth).ok();
++        }
++    }
++    out.write_str(" · ").ok();
++    match app.side_subaudio_tx(i) {
++        SubAudio::Ctcss(t) => {
++            write!(out, "T{}.{}", t / 10, t % 10).ok();
++        }
++        SubAudio::Dcs { code, inverted } => {
++            write!(out, "D{:03o}{}", code, if inverted { "I" } else { "" }).ok();
++        }
++        SubAudio::None => {
++            out.write_str("No tone").ok();
++        }
++    }
++    out.write_str(" · ").ok();
++    out.write_str(match app.side_power(i) {
++        Power::Low => "Low",
++        Power::Mid => "Mid",
++        Power::High => "High",
++    })
++    .ok();
++}
++
++#[inline(never)]
++fn clean_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
++where
++    D: DrawTarget<Color = Rgb565>,
++{
++    fill(lcd, 0, 0, SCREEN_W, SCREEN_H, pal.bg);
++    fill(lcd, 2, 2, SCREEN_W - 4, 14, pal.panel);
++
++    let master = snap.master_index;
++    let slave = 1 - master;
++
++    fill(
++        lcd,
++        CLEAN_CARD_X,
++        CLEAN_BIG_Y,
++        SCREEN_W - 4,
++        CLEAN_BIG_H,
++        pal.panel,
++    );
++    icons::draw_outline(
++        lcd,
++        Point::new(CLEAN_CARD_X, CLEAN_BIG_Y),
++        Size::new((SCREEN_W - 4) as u32, CLEAN_BIG_H as u32),
++        pal.accent,
++    );
++    clean_card_big(lcd, app, master, snap, pal);
++
++    fill(
++        lcd,
++        CLEAN_CARD_X,
++        CLEAN_SMALL_Y,
++        SCREEN_W - 4,
++        CLEAN_SMALL_H,
++        pal.panel,
++    );
++    clean_card_small(lcd, app, slave, snap, pal);
++
++    let mut hint: TextBuf<32> = TextBuf::new();
++    hint.write_str(if snap.dual_standby {
++        "Listening on both"
++    } else {
++        "Single watch"
++    })
++    .ok();
++    if snap.key_locked {
++        hint.write_str(" · Locked").ok();
++    }
++    text(lcd, hint.as_str(), &FONT_5X8, 4, 120, pal.dim);
++
++    draw_overlay_for(lcd, app, pal);
++}
++
++#[inline(never)]
++fn clean_card_big<D>(
++    lcd: &mut D,
++    app: &app::App,
++    i: usize,
++    snap: &Snapshot,
++    pal: Palette,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let x = CLEAN_CARD_X + 6;
++    let label_base = CLEAN_BIG_Y + 13;
++    let freq_base = CLEAN_BIG_Y + 36;
++    let info_base = CLEAN_BIG_Y + CLEAN_BIG_H - 5;
++
++    if app.channel_input_len() > 0 {
++        let mut buf: TextBuf<8> = TextBuf::new();
++        channel_input_text(app, &mut buf);
++        text(lcd, buf.as_str(), &FONT_6X10, x, label_base, pal.amber);
++    } else {
++        let mut label: TextBuf<24> = TextBuf::new();
++        side_label(app, i, &mut label);
++        label.write_str(" · MAIN").ok();
++        text(lcd, label.as_str(), &FONT_6X10, x, label_base, pal.accent);
++    }
++
++    let name = app.side_name_str(i);
++    let has_name = app.side_is_channel_mode(i) && !name.is_empty();
++    if app.freq_input_len() > 0 {
++        let mut buf: TextBuf<8> = TextBuf::new();
++        freq_input_text(app, &mut buf);
++        text(lcd, buf.as_str(), &FONT_9X18, x, freq_base, pal.amber);
++    } else {
++        match app.channel_display_mode() {
++            ChannelDisplayMode::Name if has_name => {
++                let shown = &name[..name.len().min(16)];
++                text(lcd, shown, &FONT_9X18, x, freq_base, pal.fg);
++            }
++            ChannelDisplayMode::NameFreq if has_name => {
++                let mut f: TextBuf<12> = TextBuf::new();
++                fmt_freq5(snap.sides[i].freq_hz, &mut f);
++                text(lcd, f.as_str(), &FONT_6X10, x, freq_base, pal.fg);
++            }
++            _ => draw_frequency_at(lcd, snap.sides[i].freq_hz, x, freq_base, pal.fg),
++        }
++    }
++
++    let mut info: TextBuf<40> = TextBuf::new();
++    clean_info_line(app, i, &mut info);
++    text(lcd, info.as_str(), &FONT_5X8, x, info_base, pal.dim);
++}
++
++#[inline(never)]
++fn clean_card_small<D>(
++    lcd: &mut D,
++    app: &app::App,
++    i: usize,
++    snap: &Snapshot,
++    pal: Palette,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let x = CLEAN_CARD_X + 6;
++    let label_base = CLEAN_SMALL_Y + 12;
++    let freq_base = CLEAN_SMALL_Y + 25;
++
++    let mut label: TextBuf<16> = TextBuf::new();
++    side_label(app, i, &mut label);
++    text(lcd, label.as_str(), &FONT_6X10, x, label_base, pal.slave);
++
++    if snap.dtmf_dial_active {
++        let mut buf: TextBuf<17> = TextBuf::new();
++        dtmf_dial_text(app, &mut buf);
++        text(lcd, buf.as_str(), &FONT_6X10, x, freq_base, pal.amber);
++    } else {
++        let mut f: TextBuf<12> = TextBuf::new();
++        fmt_freq5(snap.sides[i].freq_hz, &mut f);
++        text(lcd, f.as_str(), &FONT_6X10, x, freq_base, pal.slave);
++    }
++}
++
++#[inline(never)]
++fn clean_dyn<D>(
++    lcd: &mut D,
++    app: &app::App,
++    pal: Palette,
++    cache: &mut Cache,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    // status pill, left region
++    let st = status_state(app);
++    if force || cache.status != Some(st) {
++        cache.status = Some(st);
++        fill(lcd, 5, 3, 94, 12, pal.panel);
++        if st.transmitting {
++            let secs = st.tx_secs.unwrap_or(0);
++            let mut buf: TextBuf<8> = TextBuf::new();
++            fmt_timer(secs, &mut buf);
++            text(lcd, buf.as_str(), &FONT_6X10, 8, 13, pal.alert);
++        } else {
++            let mut x = 8;
++            if let Some(min) = st.clock_min {
++                let h24 = min / 60;
++                let h12 = (h24 + 11) % 12 + 1;
++                let mut clock: TextBuf<12> = TextBuf::new();
++                write!(
++                    clock,
++                    "{}:{:02} {}",
++                    h12,
++                    min % 60,
++                    if h24 < 12 { "AM" } else { "PM" }
++                )
++                .ok();
++                text(lcd, clock.as_str(), &FONT_5X8, x, 12, pal.dim);
++                x += clock.as_str().len() as i32 * TINY_W + 4;
++            }
++            for (on, label, color) in [
++                (st.dual_standby, "DW", pal.accent),
++                (st.vox, "VX", pal.amber),
++                (st.power_save, "PS", pal.dim),
++            ] {
++                if on && x + 2 * TINY_W <= 97 {
++                    text(lcd, label, &FONT_5X8, x, 12, color);
++                    x += 3 * TINY_W;
++                }
++            }
++            if st.key_locked && x + 8 <= 97 {
++                icons::draw_padlock(lcd, x, 4, pal.amber);
+             }
+         }
+     }
++
++    // battery, pill right region
++    let bstate = (app.battery_bars(), app.battery_voltage_cv());
++    if force || cache.battery != Some(bstate) {
++        cache.battery = Some(bstate);
++        fill(lcd, 100, 3, 55, 12, pal.panel);
++        let (bars, cv) = bstate;
++        let icon_x = SCREEN_W - 6 - icons::BATTERY_W;
++        let mut volts: TextBuf<8> = TextBuf::new();
++        write!(volts, "{}.{:02}V", cv / 100, cv % 100).ok();
++        let vw = volts.as_str().len() as i32 * TINY_W;
++        text(lcd, volts.as_str(), &FONT_5X8, icon_x - 4 - vw, 12, pal.dim);
++        let charge = match bars {
++            0 | 1 => pal.alert,
++            2 => pal.amber,
++            _ => pal.green,
++        };
++        icons::draw_battery(lcd, icon_x, 4, bars, pal.dim, charge);
++    }
++
++    // per-card signal text + MIC bar
++    let ms = meter_state(app);
++    let meter_changed = force || cache.meter != Some(ms);
++    for s in 0..2usize {
++        let kind = rx_status_kind(app, s);
++        let rxs = RxStatusState { text: kind };
++        if meter_changed || cache.rx_status[s] != Some(rxs) {
++            cache.rx_status[s] = Some(rxs);
++            let (ry, rh) = if s == app.master_index() {
++                (CLEAN_BIG_Y + 5, 11)
++            } else {
++                (CLEAN_SMALL_Y + 5, 11)
++            };
++            fill(lcd, 102, ry, 52, rh, pal.panel);
++            let base = ry + 9;
++            let mut line: TextBuf<12> = TextBuf::new();
++            let mut color = pal.dim;
++            if ms.tx && s == app.master_index() {
++                line.write_str("TX").ok();
++                color = pal.alert;
++            } else {
++                let (kind2, dbm) = signal_reading(app, s);
++                match kind2 {
++                    RxStatusText::Rx => {
++                        if let Some(dbm) = dbm {
++                            write!(line, "{} dBm", dbm).ok();
++                        }
++                        color = pal.green;
++                    }
++                    RxStatusText::LastSignal => {
++                        if let Some(dbm) = dbm {
++                            write!(line, "{} dBm", dbm).ok();
++                        }
++                    }
++                    RxStatusText::Tx => {
++                        line.write_str("TX").ok();
++                        color = pal.alert;
++                    }
++                    RxStatusText::None => {}
++                }
++            }
++            if !line.as_str().is_empty() {
++                let w = line.as_str().len() as i32 * TINY_W;
++                text(lcd, line.as_str(), &FONT_5X8, 152 - w, base, color);
++            }
++        }
++    }
++    if meter_changed {
++        cache.meter = Some(ms);
++        // MIC bar shares the hint row's right end while transmitting.
++        fill(lcd, 96, 110, 62, 14, pal.bg);
++        if ms.tx {
++            text(lcd, "MIC", &FONT_5X8, 98, 120, pal.alert);
++            let level = (ms.level as u16 * 10 / MIC_BAR_SEGS as u16) as u8;
++            draw_bar(lcd, 116, 122, level, 8, Some(pal.alert), pal);
++        }
++    }
++}
++
++// ---- theme 2: Data Dense ----
++
++const DENSE_A_TOP: i32 = 13;
++const DENSE_A_L1: i32 = 22;
++const DENSE_LP: i32 = 10; // line pitch
++const DENSE_B_L1: i32 = 71;
++const DENSE_RSSI0_X: i32 = 53;
++const DENSE_RSSI1_X: i32 = 63;
++
++#[inline(never)]
++fn dense_side_head(
++    app: &app::App,
++    i: usize,
++    master: bool,
++    out: &mut TextBuf<28>,
++) {
++    out.write_str(if i == 0 { "A" } else { "B" }).ok();
++    out.write_str(if master { ">" } else { " " }).ok();
++    side_label(app, i, out);
++}
++
++#[inline(never)]
++fn dense_full<D>(lcd: &mut D, app: &app::App, snap: &Snapshot, pal: Palette)
++where
++    D: DrawTarget<Color = Rgb565>,
++{
++    fill(lcd, 0, 0, SCREEN_W, SCREEN_H, pal.bg);
++    fill(lcd, 0, 11, SCREEN_W, 1, pal.dim);
++    icons::draw_outline(
++        lcd,
++        Point::new(0, DENSE_A_TOP),
++        Size::new(SCREEN_W as u32, 47),
++        pal.dim,
++    );
++
++    let master = snap.master_index;
++    for i in 0..2usize {
++        let is_master = i == master;
++        let l1 = if i == 0 { DENSE_A_L1 } else { DENSE_B_L1 };
++        let fg = if is_master { pal.fg } else { pal.slave };
++
++        // L1: head + name
++        if is_master && app.channel_input_len() > 0 {
++            let mut buf: TextBuf<8> = TextBuf::new();
++            channel_input_text(app, &mut buf);
++            text(lcd, buf.as_str(), &FONT_5X8, 3, l1, pal.amber);
++        } else {
++            let mut head: TextBuf<28> = TextBuf::new();
++            dense_side_head(app, i, is_master, &mut head);
++            if i == 1 {
++                head.write_str(" ").ok();
++                head.write_str(match snap.sides[i].modulation {
++                    Modulation::Fm => "FM",
++                    Modulation::Am => "AM",
++                    Modulation::Usb => "USB",
++                    Modulation::Cw => "CW",
++                    Modulation::Cwf => "CWF",
++                })
++                .ok();
++            }
++            text(lcd, head.as_str(), &FONT_5X8, 3, l1, fg);
++        }
++        if i == 0 {
++            let mut sql: TextBuf<8> = TextBuf::new();
++            write!(sql, "SQL{}", app.settings().sql_level).ok();
++            let w = sql.as_str().len() as i32 * TINY_W;
++            text(lcd, sql.as_str(), &FONT_5X8, SCREEN_W - 3 - w, l1, pal.dim);
++        }
++
++        // L2: RX freq (+ offset) / input states
++        let l2 = l1 + DENSE_LP;
++        if is_master && app.freq_input_len() > 0 {
++            let mut line: TextBuf<16> = TextBuf::new();
++            line.write_str("RX ").ok();
++            freq_input_text(app, &mut line);
++            text(lcd, line.as_str(), &FONT_5X8, 3, l2, pal.amber);
++        } else if !is_master && snap.dtmf_dial_active {
++            let mut buf: TextBuf<17> = TextBuf::new();
++            dtmf_dial_text(app, &mut buf);
++            text(lcd, buf.as_str(), &FONT_5X8, 3, l2, pal.amber);
++        } else {
++            let mut line: TextBuf<24> = TextBuf::new();
++            line.write_str("RX ").ok();
++            fmt_freq5(snap.sides[i].freq_hz, &mut line);
++            if i == 0 {
++                fmt_offset_suffix(
++                    snap.sides[i].offset_hz,
++                    snap.sides[i].freq_dir,
++                    &mut line,
++                );
++            }
++            text(lcd, line.as_str(), &FONT_5X8, 3, l2, fg);
++        }
++
++        if i == 0 {
++            // L3: TX freq + tone
++            let mut line: TextBuf<28> = TextBuf::new();
++            line.write_str("TX ").ok();
++            fmt_freq5(app.side_tx_freq_hz(0), &mut line);
++            fmt_tone_suffix(snap.sides[0].subaudio_tx, &mut line);
++            text(lcd, line.as_str(), &FONT_5X8, 3, l1 + 2 * DENSE_LP, fg);
++            // L4: power / bandwidth (RSSI is a dynamic field, see dense_dyn)
++            let mut line: TextBuf<16> = TextBuf::new();
++            line.write_str("PWR ").ok();
++            line.write_str(match snap.sides[0].power {
++                Power::Low => "LO",
++                Power::Mid => "MD",
++                Power::High => "HI",
++            })
++            .ok();
++            line.write_str(if snap.sides[0].wide_band {
++                " WD"
++            } else {
++                " NB"
++            })
++            .ok();
++            text(lcd, line.as_str(), &FONT_5X8, 3, l1 + 3 * DENSE_LP, fg);
++        } else {
++            // L3: state flags
++            let mut line: TextBuf<32> = TextBuf::new();
++            write!(
++                line,
++                "DW: {} VOX: {} PS: {}",
++                if snap.dual_standby { "ON" } else { "OFF" },
++                if snap.vox { "ON" } else { "OFF" },
++                if snap.power_save { "ON" } else { "OFF" },
++            )
++            .ok();
++            text(lcd, line.as_str(), &FONT_5X8, 3, l1 + 2 * DENSE_LP, pal.dim);
++            // L4: position
++            let mut line: TextBuf<24> = TextBuf::new();
++            if snap.sides[1].is_channel_mode {
++                write!(line, "CH {:03}", snap.sides[1].channel_num).ok();
++            } else {
++                line.write_str("VFO").ok();
++            }
++            if snap.key_locked {
++                line.write_str(" LOCK").ok();
++            }
++            text(lcd, line.as_str(), &FONT_5X8, 3, l1 + 3 * DENSE_LP, pal.dim);
++        }
++    }
++
++    fill(lcd, 0, 105, SCREEN_W, 1, pal.hair);
++    let mut last: TextBuf<32> = TextBuf::new();
++    match app.last_signal_peak() {
++        Some((side, dbm)) => {
++            last.write_str("LAST: ").ok();
++            fmt_freq4(snap.sides[side].freq_hz, &mut last);
++            write!(last, " {}dBm {}", dbm, if side == 0 { "A" } else { "B" }).ok();
++        }
++        None => {
++            last.write_str("LAST: --").ok();
++        }
++    }
++    text(lcd, last.as_str(), &FONT_5X8, 3, 115, pal.dim);
++
++    draw_overlay_for(lcd, app, pal);
++}
++
++#[inline(never)]
++fn dense_dyn<D>(
++    lcd: &mut D,
++    app: &app::App,
++    pal: Palette,
++    cache: &mut Cache,
++    force: bool,
++) where
++    D: DrawTarget<Color = Rgb565>,
++{
++    let st = status_state(app);
++    let status_changed = force || cache.status != Some(st);
++    if status_changed {
++        cache.status = Some(st);
++    }
++    let bstate = (app.battery_bars(), app.battery_voltage_cv());
++    let batt_changed = force || cache.battery != Some(bstate);
++    if batt_changed {
++        cache.battery = Some(bstate);
++    }
++
++    if status_changed || batt_changed {
++        // header: "AR-5RM 03:52 BATT 7.9V"
++        fill(lcd, 0, 0, SCREEN_W, 11, pal.bg);
++        let mut x = 2;
++        text(lcd, "AR-5RM", &FONT_5X8, x, 9, pal.fg);
++        x += 6 * TINY_W + 2;
++        let mut clock: TextBuf<8> = TextBuf::new();
++        match st.clock_min {
++            Some(min) => fmt_clock24(min, &mut clock),
++            None => {
++                clock.write_str("--:--").ok();
++            }
++        }
++        text(lcd, clock.as_str(), &FONT_5X8, x, 9, pal.dim);
++        x += 5 * TINY_W + 2;
++        text(lcd, "BATT", &FONT_5X8, x, 9, pal.dim);
++        x += 4 * TINY_W + 2;
++        let (_, cv) = bstate;
++        let mut volts: TextBuf<8> = TextBuf::new();
++        fmt_volts(cv, &mut volts);
++        text(lcd, volts.as_str(), &FONT_5X8, x, 9, pal.fg);
++        if st.key_locked {
++            text_right(lcd, "LOCK", &FONT_5X8, 9, pal.amber);
++        }
++    }
++
++    // RSSI fields on A L4 / B L2
++    let ms = meter_state(app);
++    if force || cache.meter != Some(ms) {
++        cache.meter = Some(ms);
++        for i in 0..2usize {
++            let (rx, baseline) = if i == 0 {
++                (DENSE_RSSI0_X, DENSE_A_L1 + 3 * DENSE_LP)
++            } else {
++                (DENSE_RSSI1_X, DENSE_B_L1 + DENSE_LP)
++            };
++            fill(lcd, rx, baseline - 8, SCREEN_W - rx - 2, 10, pal.bg);
++            let mut line: TextBuf<16> = TextBuf::new();
++            line.write_str("RSSI ").ok();
++            let (_, dbm) = signal_reading(app, i);
++            match dbm {
++                Some(dbm) => {
++                    write!(line, "{}", dbm).ok();
++                }
++                None => {
++                    line.write_str("---").ok();
++                }
++            }
++            text(lcd, line.as_str(), &FONT_5X8, rx, baseline, pal.fg);
++        }
++    }
++
++    if status_changed {
++        // bottom status line
++        fill(lcd, 0, 116, SCREEN_W, 12, pal.bg);
++        if st.transmitting {
++            let secs = st.tx_secs.unwrap_or(0);
++            let mut buf: TextBuf<16> = TextBuf::new();
++            buf.write_str("TX ").ok();
++            fmt_timer(secs, &mut buf);
++            text(lcd, buf.as_str(), &FONT_5X8, 3, 125, pal.alert);
++        } else {
++            let mut line: TextBuf<32> = TextBuf::new();
++            write!(
++                line,
++                "WATCH {} · DW {} · PS {}",
++                if app.watching_index() == 0 { "A" } else { "B" },
++                if st.dual_standby { "ON" } else { "OFF" },
++                if st.power_save { "ON" } else { "OFF" },
++            )
++            .ok();
++            text(lcd, line.as_str(), &FONT_5X8, 3, 125, pal.dim);
++        }
++    }
+ }
+diff --git a/src/ui/theme.rs b/src/ui/theme.rs
+new file mode 100644
+index 0000000..bfbc3bf
+--- /dev/null
++++ b/src/ui/theme.rs
+@@ -0,0 +1,136 @@
++//! Standby theme system (fork feature — see `fork/FORK.md` in the
++//! ar5rm-firmware repo).
++//!
++//! The selected theme is deliberately NOT a field of the Settings record:
++//! that record is byte-full and CPS-compatible, so it stays untouched.
++//! Instead the theme lives in a small block in the app-private data
++//! region of the external NOR flash. Overlay apps may write anywhere at
++//! or above `OVERLAY_APP_ADDR` (0x14C000); the THEMES app writes the
++//! block, the core reads it at boot and again whenever standby is
++//! entered, so a theme picked in the app is live on return to standby.
++//!
++//! App-data region map (4K sectors, see APPS.md):
++//!   0x18C000..0x191000  satellite table (upstream `push_sat`)
++//!   0x191000..0x195000  ACTLOG header + log (custom app)
++//!   0x195000..0x196000  THEME block (this module)
++//!
++//! Block format (first 6 bytes of the sector, the rest stays 0xFF):
++//!   [0..4]  magic `THM1`
++//!   [4]     theme id (0..THEME_COUNT)
++//!   [5]     CRC-8 (poly 0x07, init 0x00) over bytes [0..5]
++//! A missing, erased or CRC-invalid block selects theme 0 (APX Pro).
++
++use embedded_graphics::pixelcolor::Rgb565;
++
++pub const THEME_DATA_ADDR: u32 = 0x0019_5000;
++pub const THEME_MAGIC: [u8; 4] = *b"THM1";
++pub const THEME_COUNT: u8 = 4;
++
++pub const THEME_APX: u8 = 0;
++pub const THEME_CLEAN: u8 = 1;
++pub const THEME_DENSE: u8 = 2;
++pub const THEME_MINIMAL: u8 = 3;
++
++pub fn crc8(data: &[u8]) -> u8 {
++    let mut crc: u8 = 0;
++    for &byte in data {
++        crc ^= byte;
++        for _ in 0..8 {
++            crc = if crc & 0x80 != 0 {
++                (crc << 1) ^ 0x07
++            } else {
++                crc << 1
++            };
++        }
++    }
++    crc
++}
++
++/// Validate a raw theme block; returns the theme id, or 0 when the block
++/// is absent/corrupt or the id is out of range.
++pub fn parse_theme_block(buf: &[u8]) -> u8 {
++    if buf.len() < 6 || buf[0..4] != THEME_MAGIC {
++        return THEME_APX;
++    }
++    let id = buf[4];
++    if id >= THEME_COUNT || crc8(&buf[0..5]) != buf[5] {
++        return THEME_APX;
++    }
++    id
++}
++
++const fn rgb(r: u8, g: u8, b: u8) -> Rgb565 {
++    Rgb565::new(r, g, b)
++}
++
++/// Color scheme for one theme. `panel` doubles as the list title-bar
++/// background on shared screens; `accent` is the focus/highlight color
++/// (for APX Pro that is the amber of the mockup, not green).
++#[derive(Clone, Copy, PartialEq)]
++pub struct Palette {
++    pub bg: Rgb565,
++    pub panel: Rgb565,
++    pub fg: Rgb565,
++    pub slave: Rgb565,
++    pub accent: Rgb565,
++    pub dim: Rgb565,
++    pub hair: Rgb565,
++    pub amber: Rgb565,
++    pub green: Rgb565,
++    pub alert: Rgb565,
++}
++
++pub fn palette(id: u8) -> Palette {
++    match id {
++        THEME_CLEAN => Palette {
++            bg: rgb(1, 6, 10),
++            panel: rgb(3, 12, 19),
++            fg: rgb(30, 62, 30),
++            slave: rgb(17, 32, 24),
++            accent: rgb(8, 50, 31),
++            dim: rgb(10, 21, 25),
++            hair: rgb(4, 10, 14),
++            amber: rgb(31, 50, 0),
++            green: rgb(10, 57, 17),
++            alert: rgb(31, 8, 4),
++        },
++        THEME_DENSE => Palette {
++            bg: rgb(0, 0, 0),
++            panel: rgb(0, 0, 0),
++            fg: rgb(0, 57, 11),
++            slave: rgb(0, 34, 7),
++            accent: rgb(0, 57, 11),
++            dim: rgb(0, 30, 6),
++            hair: rgb(0, 20, 4),
++            amber: rgb(31, 50, 0),
++            green: rgb(0, 57, 11),
++            alert: rgb(31, 8, 4),
++        },
++        THEME_MINIMAL => Palette {
++            bg: rgb(0, 0, 0),
++            panel: rgb(0, 0, 0),
++            fg: rgb(31, 63, 31),
++            slave: rgb(9, 18, 9),
++            accent: rgb(31, 63, 31),
++            dim: rgb(13, 26, 13),
++            hair: rgb(5, 10, 5),
++            amber: rgb(31, 50, 0),
++            green: rgb(0, 55, 6),
++            alert: rgb(31, 8, 4),
++        },
++        _ => Palette {
++            // APX Pro (default; also the upstream palette with the accent
++            // moved to amber, per the approved mockup).
++            bg: rgb(0, 0, 0),
++            panel: rgb(2, 6, 12),
++            fg: rgb(31, 63, 31),
++            slave: rgb(20, 40, 20),
++            accent: rgb(31, 50, 0),
++            dim: rgb(13, 26, 13),
++            hair: rgb(6, 12, 6),
++            amber: rgb(31, 50, 0),
++            green: rgb(0, 55, 6),
++            alert: rgb(31, 8, 4),
++        },
++    }
++}
