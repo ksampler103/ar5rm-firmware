@@ -666,12 +666,28 @@ var S={
   cpsReady:false, cpsLastActivity:0, cpsSettings:null, cpsSettingsRead:false,
   cpsSlots:null, cpsApp:null, cpsAppValid:false, cpsPendingProfile:null,
   detected:"unknown", backupWaived:false, backupWaiveReason:null, flowStage:"connect", view:null, fromHub:false, selAppId:null,
-  rptbookEntries:null, rptbookLookupDone:false, rptbookZip:"", rptbookRadius:25, rptbookFallback:false
+  rptbookEntries:null, rptbookLookupDone:false, rptbookZip:"", rptbookRadius:25, rptbookFallback:false,
+  rptbookFile:null, rptbookNoCoord:0, rptbookFromFile:false
 };
 /* Shared page-level geocode: the last successful ZIP lookup (RPTBOOK panel)
    lives here so the SATELLITE panel can prefill the observer position from
    it. Shape: {lat, lon, city, state, zip} or null. */
 var lastGeocode=null;
+/* Last observer position used in this browser, persisted in localStorage
+   (key ar5rm.satpos) so the SATELLITE panel can prefill it next visit.
+   Browser-local only — never sent anywhere by these helpers. */
+function satStoredPosition(){
+  try{
+    var s=localStorage.getItem("ar5rm.satpos");
+    if(!s) return null;
+    var o=JSON.parse(s);
+    if(o && isFinite(o.lat) && isFinite(o.lon)) return o;
+  }catch(e){}
+  return null;
+}
+function satStorePosition(lat, lon, label){
+  try{ localStorage.setItem("ar5rm.satpos", JSON.stringify({lat:lat, lon:lon, label:label||"", ts:Date.now()})); }catch(e){}
+}
 
 /* ---------- RX buffer (single background reader fills this) ---------- */
 var rxBuf=[]; var rxHeardTotal=0; var rxWaiters=new Set();
@@ -2153,6 +2169,8 @@ function satPrefillValues(){
     if(la!==0x7FFFFFFF) lat=String(la/100000);
     if(lo!==0x7FFFFFFF) lon=String(lo/100000);
   }
+  var saved=satStoredPosition();
+  if(saved){ lat=String(saved.lat); lon=String(saved.lon); }
   if(lastGeocode){ lat=String(lastGeocode.lat); lon=String(lastGeocode.lon); }
   return {lat:lat, lon:lon};
 }
@@ -2173,20 +2191,47 @@ function satToolsHtml(){
     "<div class='statusline' id='satGenLine'></div>"+
     "<div class='statusline' id='satStatus'>No satellite table installed from this page in this session yet.</div>"+
     "<h4 style='margin-top:16px'>Observer position</h4>"+
-    "<p>Your latitude / longitude (decimal degrees) are stored in the radio's settings record (bytes 32–39, degrees × 100000) so the app can compute passes for where you are. Prefilled from the radio's stored position when one is set, or from a ZIP lookup run in this session.</p>"+
+    "<p>Your latitude / longitude (decimal degrees) are stored in the radio's settings record (bytes 32–39, degrees × 100000) so the app can compute passes for where you are. Prefilled from the radio's stored position when one is set, or from a ZIP lookup run in this session. You never have to type the numbers: fill them from your current location, a ZIP code, or a street address below, check them, then Save.</p>"+
     "<div class='row'>"+
       "<label>Latitude<br/><input type='text' class='coord' id='satLat' inputmode='decimal' placeholder='e.g. 35.2621' value='"+escapeHtml(v.lat)+"' /></label>"+
       "<label>Longitude<br/><input type='text' class='coord' id='satLon' inputmode='decimal' placeholder='e.g. -81.1873' value='"+escapeHtml(v.lon)+"' /></label>"+
     "</div>"+
+    "<div class='row'><button id='btnSatGeo'>Use my current location</button></div>"+
+    "<div class='row'>"+
+      "<label>ZIP code<br/><input type='text' class='zipin' id='satZip' inputmode='numeric' maxlength='5' placeholder='e.g. 28052' /></label>"+
+      "<button id='btnSatZip'>Look up ZIP</button>"+
+    "</div>"+
+    "<div class='row'>"+
+      "<label>Street address<br/><input type='text' class='coord' id='satAddr' style='width:280px' placeholder='Street, City, State' /></label>"+
+      "<button id='btnSatAddr'>Look up address</button>"+
+    "</div>"+
+    "<div class='statusline' id='satFillStatus'>Current location uses your browser/device location; ZIP and address lookups run only when you click them.</div>"+
     "<div class='row'><button class='primary' id='btnSatSavePos'>Save position</button></div>"+
     "<div class='statusline' id='satPosStatus'>Save reads the settings record fresh, changes only bytes 32–39, writes it back, and verifies by read-back.</div>"+
   "</div>";
+}
+function rptFileStatusText(){
+  var f=S.rptbookFile;
+  if(!f) return "No file loaded — the ZIP lookup below tries hosted data (none published yet) and Install falls back to the owner-default block. Load your own export to search real local data.";
+  var withCoords=0;
+  f.records.forEach(function(e){ if(isFinite(e.lat) && isFinite(e.lon)) withCoords++; });
+  return "Loaded “"+f.name+"” ("+f.format+"): "+f.records.length+" repeater(s), "+withCoords+" with coordinates"+
+    (f.skipped?(", "+f.skipped+" row(s) skipped as unreadable"):"")+
+    ". ZIP lookups now run against this file."+
+    (withCoords<f.records.length?" Entries without coordinates cannot be distance-filtered — they are listed unfiltered and marked “no coords”.":"");
 }
 function rptToolsHtml(){
   var r=S.rptbookRadius||25;
   return "<div class='toolbox' id='rptTools'>"+
     "<h4>Local repeaters by ZIP</h4>"+
     "<p>Look up repeaters near a ZIP code and preview what will be written. <strong>Install</strong> then writes the app plus a data block built from the previewed repeaters. With no successful lookup, Install writes the owner-default repeater block instead.</p>"+
+    "<h4 style='margin-top:16px'>Repeater data from your own file</h4>"+
+    "<p>Load a repeater file you exported yourself — a RepeaterBook export (CSV, GPX, or KML), a CHIRP CSV, or this page's shard JSON. The file is read in this browser only: it is never uploaded, sent anywhere, or stored on a server. Note: RepeaterBook's CSV/CHIRP exports carry no coordinates, so those entries are listed unfiltered by distance; their GPX/KML exports do carry coordinates and feed the ZIP + radius filter.</p>"+
+    "<div class='row'>"+
+      "<label>Load repeater data from a file<br/><input type='file' id='rptFile' accept='.csv,.json,.gpx,.kml' /></label>"+
+      "<button id='btnRptFileClear'"+(S.rptbookFile?"":" hidden")+">Clear file</button>"+
+    "</div>"+
+    "<div class='statusline' id='rptFileStatus'>"+escapeHtml(rptFileStatusText())+"</div>"+
     "<div class='row'>"+
       "<label>ZIP code<br/><input type='text' class='zipin' id='rptZip' inputmode='numeric' maxlength='5' placeholder='e.g. 28052' value='"+escapeHtml(S.rptbookZip||"")+"' /></label>"+
       "<label>Radius<br/><select id='rptRadius'>"+
@@ -2204,9 +2249,16 @@ function attachAppToolListeners(entry){
   if(isSatelliteEntry(entry)){
     var bi=$("btnSatInstall"); if(bi) bi.addEventListener("click", doSatInstall);
     var bs=$("btnSatSavePos"); if(bs) bs.addEventListener("click", doSatSavePos);
+    var bg=$("btnSatGeo"); if(bg) bg.addEventListener("click", doSatGeo);
+    var bz=$("btnSatZip"); if(bz) bz.addEventListener("click", doSatZip);
+    var ba=$("btnSatAddr"); if(ba) ba.addEventListener("click", doSatAddr);
+    var zi=$("satZip"); if(zi) zi.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); doSatZip(); } });
+    var ai=$("satAddr"); if(ai) ai.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); doSatAddr(); } });
   }
   if(isRptbookEntry(entry)){
     var bl=$("btnRptLookup"); if(bl) bl.addEventListener("click", doRptLookup);
+    var rf=$("rptFile"); if(rf) rf.addEventListener("change", onRptFileChosen);
+    var rc=$("btnRptFileClear"); if(rc) rc.addEventListener("click", clearRptFile);
     if(S.rptbookLookupDone) renderRptPreview();
   }
   refreshControls();
@@ -2286,6 +2338,7 @@ async function doSatSavePos(){
     S.cpsSettings=Uint8Array.from(verify.data); S.cpsSettingsRead=true;
     renderCpsSettings();
     if(ok){
+      satStorePosition(lat, lon, "");
       if(st){ st.textContent="Position saved and verified by read-back: lat "+lat+", lon "+lon+" (stored ×100000 at settings bytes 32–39)."; st.className="statusline ok"; }
       logMsg("Observer position saved and verified: lat "+lat+", lon "+lon+".","ok");
     }else{
@@ -2296,6 +2349,86 @@ async function doSatSavePos(){
     if(st){ st.textContent="Save position failed: "+e.message; st.className="statusline fail"; }
     logMsg("Save position failed: "+e.message,"err");
   }finally{ setRunning(null); refreshControls(); }
+}
+/* ----- SATELLITE: observer position fill methods (no typing) -----
+   All three fill the same lat/lon fields; the write path (doSatSavePos)
+   is unchanged and the operator still presses Save position. Each fill
+   also persists the position to localStorage for next visit's prefill. */
+function satFillPosition(lat, lon, placeLabel, sourceDesc){
+  var la=$("satLat"), lo=$("satLon"), st=$("satFillStatus");
+  if(!la || !lo) return;
+  la.value=lat.toFixed(5);
+  lo.value=lon.toFixed(5);
+  satStorePosition(lat, lon, placeLabel||"");
+  if(st){
+    st.textContent="Position filled from "+sourceDesc+(placeLabel?": "+placeLabel:"")+" — lat "+la.value+", lon "+lo.value+". Press Save position to write it to the radio.";
+    st.className="statusline ok";
+  }
+  logMsg("Observer position filled from "+sourceDesc+": lat "+la.value+", lon "+lo.value+(placeLabel?" ("+placeLabel+")":"")+".");
+}
+function doSatGeo(){
+  var st=$("satFillStatus");
+  if(!navigator.geolocation){
+    if(st){ st.textContent="This browser does not offer geolocation — use the ZIP or address lookup instead."; st.className="statusline fail"; }
+    return;
+  }
+  if(st){ st.textContent="Asking the browser for your current location…"; st.className="statusline run"; }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    satFillPosition(pos.coords.latitude, pos.coords.longitude, "", "your current location");
+  }, function(err){
+    if(st){ st.textContent="Location unavailable ("+((err && err.message)||"permission denied or no fix")+") — use the ZIP or address lookup instead."; st.className="statusline fail"; }
+  }, {enableHighAccuracy:false, timeout:15000, maximumAge:600000});
+}
+async function satGeocodeZip(zip){
+  var zresp=await fetch("https://api.zippopotam.us/us/"+zip);
+  if(!zresp.ok) throw new Error("ZIP lookup failed (HTTP "+zresp.status+") — check the ZIP code and try again.");
+  var z=await zresp.json();
+  var place=(z && z.places && z.places[0])||null;
+  if(!place) throw new Error("ZIP lookup returned no place for "+zip+".");
+  var lat=parseFloat(place.latitude), lon=parseFloat(place.longitude);
+  if(!isFinite(lat) || !isFinite(lon)) throw new Error("ZIP lookup returned no usable coordinates for "+zip+".");
+  return {lat:lat, lon:lon, city:place["place name"]||"", state:place["state abbreviation"]||place.state||""};
+}
+async function doSatZip(){
+  var st=$("satFillStatus");
+  var zip=(($("satZip")||{}).value||"").trim();
+  if(!/^\d{5}$/.test(zip)){
+    if(st){ st.textContent="Enter a 5-digit ZIP code first."; st.className="statusline fail"; }
+    return;
+  }
+  if(st){ st.textContent="Looking up ZIP "+zip+"…"; st.className="statusline run"; }
+  try{
+    var g=await satGeocodeZip(zip);
+    lastGeocode={lat:g.lat, lon:g.lon, city:g.city, state:g.state, zip:zip};
+    satFillPosition(g.lat, g.lon, ((g.city?g.city+", ":"")+(g.state||"")+" "+zip).trim(), "ZIP "+zip);
+  }catch(e){
+    if(st){ st.textContent="ZIP lookup failed: "+e.message; st.className="statusline fail"; }
+  }
+}
+async function doSatAddr(){
+  var st=$("satFillStatus");
+  var q=(($("satAddr")||{}).value||"").trim();
+  if(q.length<4){
+    if(st){ st.textContent="Enter an address (street, city, state) first."; st.className="statusline fail"; }
+    return;
+  }
+  if(st){ st.textContent="Looking up the address…"; st.className="statusline run"; }
+  try{
+    /* OpenStreetMap Nominatim: one user-triggered lookup per click, no
+       batching or autocomplete, per their usage policy. */
+    var resp=await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(q));
+    if(!resp.ok) throw new Error("address lookup failed (HTTP "+resp.status+").");
+    var arr=await resp.json();
+    if(!arr || !arr.length){
+      if(st){ st.textContent="No match found for that address — check it and try again, or use the ZIP lookup."; st.className="statusline fail"; }
+      return;
+    }
+    var lat=parseFloat(arr[0].lat), lon=parseFloat(arr[0].lon);
+    if(!isFinite(lat) || !isFinite(lon)) throw new Error("the address result had no usable coordinates.");
+    satFillPosition(lat, lon, arr[0].display_name||q, "address lookup");
+  }catch(e){
+    if(st){ st.textContent="Address lookup failed: "+e.message; st.className="statusline fail"; }
+  }
 }
 /* ----- RPTBOOK: ZIP lookup + preview ----- */
 function haversineMiles(lat1, lon1, lat2, lon2){
@@ -2319,19 +2452,24 @@ function renderRptPreview(){
   var pv=$("rptPreview"), st=$("rptStatus");
   if(!pv) return;
   if(S.rptbookFallback){
-    pv.innerHTML="<div class='rptlist'><div class='rptempty'>No repeater data available for this area yet.<br/>Installing will write the owner-default repeater block instead.</div></div>";
+    pv.innerHTML="<div class='rptlist'><div class='rptempty'>No repeater data available for this area yet.<br/>Installing will write the owner-default repeater block instead."+(S.rptbookFile?"":"<br/>Tip: load your own RepeaterBook export above (file section) to search real local data.")+"</div></div>";
     return;
   }
   if(!S.rptbookEntries || !S.rptbookEntries.length){ pv.innerHTML=""; return; }
   var rows=S.rptbookEntries.map(function(e){
     return "<div class='rptrow'><span class='rn'>"+escapeHtml(String(e.name||""))+"</span>"+
+      (e.locality?"<span>"+escapeHtml(e.locality)+"</span>":"")+
       "<span>"+fmtMHz(e.rx_hz)+" MHz</span>"+
       "<span>TX tone: "+escapeHtml(toneHuman(e.tx_tone))+"</span>"+
-      "<span>"+e.dist.toFixed(1)+" mi</span></div>";
+      "<span>"+((e.dist===null || e.dist===undefined)?"no coords":e.dist.toFixed(1)+" mi")+"</span></div>";
   }).join("");
   pv.innerHTML="<div class='rptlist'>"+rows+"</div>";
   if(st && lastGeocode){
-    st.textContent=S.rptbookEntries.length+" repeater(s) within "+S.rptbookRadius+" miles of "+(lastGeocode.city||"")+", "+(lastGeocode.state||"")+" "+lastGeocode.zip+" ("+lastGeocode.lat+", "+lastGeocode.lon+") — Install will write these into the app.";
+    if(S.rptbookNoCoord>0){
+      st.textContent=S.rptbookEntries.length+" repeater(s) from "+(S.rptbookFromFile?"your loaded file":"the lookup")+" — "+S.rptbookNoCoord+" without coordinates (distance unknown, included unfiltered), the rest within "+S.rptbookRadius+" miles of "+(lastGeocode.city||"")+", "+(lastGeocode.state||"")+" "+lastGeocode.zip+" — Install will write these into the app.";
+    }else{
+      st.textContent=S.rptbookEntries.length+" repeater(s) within "+S.rptbookRadius+" miles of "+(lastGeocode.city||"")+", "+(lastGeocode.state||"")+" "+lastGeocode.zip+" ("+lastGeocode.lat+", "+lastGeocode.lon+") — Install will write these into the app.";
+    }
     st.className="statusline ok";
   }
 }
@@ -2357,40 +2495,437 @@ async function doRptLookup(){
     var city=place["place name"]||"", stateAbbr=place["state abbreviation"]||place.state||"";
     lastGeocode={lat:lat, lon:lon, city:city, state:stateAbbr, zip:zip};
     logMsg("RPTBOOK lookup: ZIP "+zip+" — "+city+", "+stateAbbr+" at "+lat+", "+lon+".");
-    if(st) st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". Fetching repeater shard "+zip.slice(0,3)+".json…";
-    var list=null;
-    try{
-      var sresp=await fetch("repeaters/"+zip.slice(0,3)+".json");
-      if(!sresp.ok) throw new Error("HTTP "+sresp.status);
-      var sj=await sresp.json();
-      list=(sj && Array.isArray(sj.repeaters))?sj.repeaters:null;
-    }catch(se){ list=null; }
-    var within=[];
+    var list=null, fromFile=false;
+    if(S.rptbookFile && S.rptbookFile.records && S.rptbookFile.records.length){
+      list=S.rptbookFile.records; fromFile=true;
+      if(st) st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". Searching your loaded file ("+S.rptbookFile.name+")…";
+      logMsg("RPTBOOK lookup: using the operator-loaded file "+S.rptbookFile.name+" ("+list.length+" records) instead of a hosted shard.");
+    }else{
+      if(st) st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". Fetching repeater shard "+zip.slice(0,3)+".json…";
+      try{
+        var sresp=await fetch("repeaters/"+zip.slice(0,3)+".json");
+        if(!sresp.ok) throw new Error("HTTP "+sresp.status);
+        var sj=await sresp.json();
+        list=(sj && Array.isArray(sj.repeaters))?sj.repeaters:null;
+      }catch(se){ list=null; }
+    }
+    var within=[], noCoord=0;
     if(list){
       list.forEach(function(e){
-        if(!e || !isFinite(e.lat) || !isFinite(e.lon) || !isFinite(e.rx_hz)) return;
-        var d=haversineMiles(lat, lon, Number(e.lat), Number(e.lon));
-        if(d<=radius) within.push({name:String(e.name||""), rx_hz:Number(e.rx_hz), tx_hz:Number(e.tx_hz)||0, tx_tone:Number(e.tx_tone)||0, rx_tone:Number(e.rx_tone)||0, lat:Number(e.lat), lon:Number(e.lon), dist:d});
+        if(!e || !isFinite(e.rx_hz)) return;
+        var rec={name:String(e.name||""), rx_hz:Number(e.rx_hz), tx_hz:Number(e.tx_hz)||0, tx_tone:Number(e.tx_tone)||0, rx_tone:Number(e.rx_tone)||0, locality:String(e.locality||"")};
+        if(isFinite(e.lat) && isFinite(e.lon)){
+          var d=haversineMiles(lat, lon, Number(e.lat), Number(e.lon));
+          if(d>radius) return;
+          rec.lat=Number(e.lat); rec.lon=Number(e.lon); rec.dist=d;
+        }else{
+          /* No coordinates (RepeaterBook's CSV/CHIRP exports carry none):
+             distance cannot be computed, so the entry is included
+             unfiltered and flagged dist=null ("no coords" in preview). */
+          rec.dist=null; noCoord++;
+        }
+        within.push(rec);
       });
-      within.sort(function(a,b){ return a.dist-b.dist; });
+      within.sort(function(a,b){
+        if(a.dist===null && b.dist===null) return 0;
+        if(a.dist===null) return 1;
+        if(b.dist===null) return -1;
+        return a.dist-b.dist;
+      });
       within=within.slice(0,272);
     }
     S.rptbookLookupDone=true;
+    S.rptbookNoCoord=noCoord; S.rptbookFromFile=fromFile;
     if(!list || within.length===0){
       S.rptbookEntries=null; S.rptbookFallback=true;
       renderRptPreview();
-      if(st){ st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". No repeater data for this area yet — Install will write the owner-default repeater block instead."; st.className="statusline"; }
-      logMsg("RPTBOOK lookup: "+(list?("no repeaters within "+radius+" miles"):"repeater shard unavailable")+" — install will fall back to the owner-default block.","warn");
+      if(st){ st.textContent="ZIP "+zip+" — "+city+", "+stateAbbr+" · lat "+lat+", lon "+lon+". "+(fromFile?("No repeaters from your file within "+radius+" miles"):"No repeater data for this area yet")+" — Install will write the owner-default repeater block instead."+(fromFile?"":" Load your own repeater file above to search real local data."); st.className="statusline"; }
+      logMsg("RPTBOOK lookup: "+(list?("no repeaters within "+radius+" miles"+(fromFile?" of the loaded file":"")):"repeater shard unavailable")+" — install will fall back to the owner-default block.","warn");
     }else{
       S.rptbookEntries=within; S.rptbookFallback=false;
       renderRptPreview();
-      logMsg("RPTBOOK lookup: "+within.length+" repeater(s) within "+radius+" miles of "+zip+" — Install will write these.","ok");
+      logMsg("RPTBOOK lookup: "+within.length+" repeater(s) "+(noCoord?("("+noCoord+" without coordinates, included unfiltered) "):"")+"within "+radius+" miles of "+zip+(fromFile?" (from your loaded file)":"")+" — Install will write these.","ok");
     }
     prefillSatPosition();
   }catch(e){
     if(st){ st.textContent="Lookup failed: "+e.message; st.className="statusline fail"; }
     logMsg("RPTBOOK lookup failed: "+e.message,"err");
   }finally{ setRunning(null); refreshControls(); }
+}
+/* ----- RPTBOOK: repeater file import (operator's own export) -----
+   The operator loads a repeater file he exported himself (RepeaterBook
+   personal-use export, CHIRP, or this page's shard JSON). The file is
+   read with FileReader in this browser only — never uploaded, fetched
+   anywhere, or stored server-side. Parsed records feed the same ZIP +
+   radius preview and the same verified block-writing path as the
+   hosted-shard flow. */
+/* RPTIMPORT-BEGIN — pure parser functions, no DOM/page globals; extracted
+   and unit-tested by tools/web-flasher/repeater-import/test-parsers.mjs */
+var RPT_DCS_TABLE=[
+  0o023,0o025,0o026,0o031,0o032,0o036,0o043,0o047,0o051,0o053,0o054,0o065,0o071,
+  0o072,0o073,0o074,0o114,0o115,0o116,0o122,0o125,0o131,0o132,0o134,0o143,0o145,
+  0o152,0o155,0o156,0o162,0o165,0o172,0o174,0o205,0o212,0o223,0o225,0o226,0o243,
+  0o244,0o245,0o246,0o251,0o252,0o255,0o261,0o263,0o265,0o266,0o271,0o274,0o306,
+  0o311,0o315,0o325,0o331,0o332,0o343,0o346,0o351,0o356,0o364,0o365,0o371,0o411,
+  0o412,0o413,0o423,0o431,0o432,0o445,0o446,0o452,0o454,0o455,0o462,0o464,0o465,
+  0o466,0o503,0o506,0o516,0o523,0o526,0o532,0o546,0o565,0o606,0o612,0o624,0o627,
+  0o631,0o632,0o645,0o654,0o662,0o664,0o703,0o712,0o723,0o731,0o732,0o734,0o743,
+  0o754
+];
+function rptDcsCode(digits, inverted){
+  /* DCS codes are written in octal notation ("023" = 0o023). Returns the
+     firmware SubaudioCode (1..105 normal, 106..250 inverted) or 0. */
+  var s=String(digits==null?"":digits).trim();
+  if(!/^[0-7]{3}$/.test(s)) return 0;
+  var idx=RPT_DCS_TABLE.indexOf(parseInt(s,8));
+  if(idx<0) return 0;
+  return idx+1+(inverted?105:0);
+}
+function rptDcsDigits(s){
+  var m=/([0-7]{3})/.exec(String(s||""));
+  return m?m[1]:"";
+}
+function rptCtcssCode(hz){
+  var t=Math.round(Number(hz)*10);
+  if(!isFinite(t) || t<600 || t>2600) return 0;
+  return t; /* firmware encoding: CTCSS in tenths of a Hz */
+}
+function rptFreqMHz(v){
+  /* A frequency cell: MHz, or integer Hz when the value is large (the
+     BTECH export writes Hz). Returns MHz or NaN. */
+  var n=parseFloat(String(v==null?"":v).replace(/[^0-9.+-]/g,""));
+  if(!isFinite(n)) return NaN;
+  if(n>10000) n=n/1000000;
+  return n;
+}
+function rptStdOffsetMHz(rxMHz){
+  if(rxMHz>=50 && rxMHz<54) return 1.0;
+  if(rxMHz>=144 && rxMHz<148) return 0.6;
+  if(rxMHz>=222 && rxMHz<225) return 1.6;
+  if(rxMHz>=420 && rxMHz<450) return 5.0;
+  if(rxMHz>=460 && rxMHz<470) return 5.0; /* GMRS */
+  if(rxMHz>=902 && rxMHz<928) return 25.0;
+  return 0;
+}
+function rptBtechSubAudio(v){
+  /* BTECH export sub-audio cell: "0"/empty = none, a five-digit integer
+     is CTCSS in hundredths of Hz (15140 = 151.4 Hz), "DCS 023N"/"DCS
+     023I" is a DCS code + polarity. */
+  var s=String(v||"").trim();
+  if(!s || s==="0") return 0;
+  var m=/dcs\s*0*([0-7]{3})\s*([ni])?/i.exec(s);
+  if(m) return rptDcsCode(m[1], (m[2]||"n").toLowerCase()==="i");
+  var n=parseFloat(s);
+  if(isFinite(n) && n>1000) return rptCtcssCode(n/100);
+  if(isFinite(n)) return rptCtcssCode(n);
+  return 0;
+}
+function rptCsvRows(text){
+  var rows=[], row=[], cell="", inQ=false, i, c;
+  var s=String(text).replace(/^\uFEFF/,"");
+  for(i=0;i<s.length;i++){
+    c=s[i];
+    if(inQ){
+      if(c==='"'){ if(s[i+1]==='"'){ cell+='"'; i++; } else inQ=false; }
+      else cell+=c;
+    }else if(c==='"' && cell===""){ inQ=true; }
+    else if(c===","){ row.push(cell); cell=""; }
+    else if(c==="\n" || c==="\r"){
+      if(c==="\r" && s[i+1]==="\n") i++;
+      row.push(cell); cell="";
+      rows.push(row); row=[];
+    }
+    else cell+=c;
+  }
+  if(cell!=="" || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(function(r){ return r.length>1 || (r.length===1 && r[0].trim()!==""); });
+}
+function rptNormHeader(h){ return String(h||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+var RPT_COL_ALIASES={
+  name:["name","channelname","title","memoryname"],
+  callsign:["callsign","call"],
+  rxfreq:["frequency","rxfreq","receivefrequency","rxfrequency","downlink","downlinkfrequency","outputfrequency","freq","freqmhz"],
+  txfreq:["transmitfrequency","txfrequency","txfreq","uplink","uplinkfrequency","inputfrequency"],
+  offset:["offset","offsetmhz","offsetfrequency"],
+  duplex:["duplex","offsetdirection","shift","dup"],
+  ctcsstx:["rtonefreq","ctcss","uplinktone","toneup","pl","uplinkpl","txctcss"],
+  ctcssrx:["ctonefreq","rxctcss","downlinktone","tonedown","rxpl","downlinkctcss"],
+  dcstx:["dtcscode","dcs","uplinkdcs","txdcs","dcscode"],
+  dcsrx:["rxdtcscode","rxdcs","downlinkdcs"],
+  dcspol:["dtcspolarity","dcspolarity"],
+  lat:["lat","latitude"],
+  lon:["lon","lng","long","longitude"],
+  city:["city","location","nearestcity"],
+  state:["state","stateprovince","province"],
+  comment:["comment","comments","landmark","notes","note"]
+};
+function rptCsvColMap(headerRow){
+  var norm=headerRow.map(rptNormHeader);
+  function find(aliases){ for(var a=0;a<aliases.length;a++){ var idx=norm.indexOf(aliases[a]); if(idx>=0) return idx; } return -1; }
+  var map={};
+  Object.keys(RPT_COL_ALIASES).forEach(function(k){ map[k]=find(RPT_COL_ALIASES[k]); });
+  map.tonemode=find(["tonemode","signaling","signalingmethod"]);
+  map.tone=find(["tone"]);
+  map.tonevalue=-1;
+  /* BTECH sub-audio headers are long ("tx_sub_audio(CTCSS=freq/DCS=…)") —
+     match by prefix. */
+  map.subtx=-1; map.subrx=-1;
+  norm.forEach(function(h,idx){
+    if(h.indexOf("txsubaudio")===0) map.subtx=idx;
+    if(h.indexOf("rxsubaudio")===0) map.subrx=idx;
+  });
+  return map;
+}
+function rptCsvRowToRecord(row, map){
+  function cell(idx){ return idx>=0 && idx<row.length ? String(row[idx]||"").trim() : ""; }
+  var rxMHz=rptFreqMHz(cell(map.rxfreq));
+  if(!isFinite(rxMHz) || rxMHz<10 || rxMHz>1300) return null;
+  var rx_hz=Math.round(rxMHz*1000000);
+  var tx_hz=0;
+  var txMHz=rptFreqMHz(cell(map.txfreq));
+  var dup=cell(map.duplex).toLowerCase();
+  if(map.txfreq>=0 && isFinite(txMHz) && txMHz>=10 && txMHz<=1300){
+    tx_hz=Math.round(txMHz*1000000);
+  }else if(dup==="split"){ /* CHIRP: the Offset cell holds the TX frequency */
+    var splitMHz=parseFloat(cell(map.offset));
+    tx_hz=(isFinite(splitMHz) && splitMHz>=10 && splitMHz<=1300)?Math.round(splitMHz*1000000):rx_hz;
+  }else{
+    var offMHz=parseFloat(cell(map.offset));
+    if(!isFinite(offMHz) || offMHz===0) offMHz=rptStdOffsetMHz(rxMHz);
+    else if(offMHz>10000) offMHz=offMHz/1000000;
+    if(dup==="-" || dup==="dup-" || dup==="minus") tx_hz=rx_hz-Math.round(offMHz*1000000);
+    else if(dup==="+" || dup==="dup+" || dup==="plus") tx_hz=rx_hz+Math.round(offMHz*1000000);
+    else tx_hz=rx_hz;
+  }
+  var tx_tone=0, rx_tone=0;
+  if(map.subtx>=0) tx_tone=rptBtechSubAudio(cell(map.subtx));
+  if(map.subrx>=0) rx_tone=rptBtechSubAudio(cell(map.subrx));
+  if(!tx_tone && !rx_tone){
+    var mode=cell(map.tonemode).toLowerCase();
+    var ctcssTxV=parseFloat(cell(map.ctcsstx)), ctcssRxV=parseFloat(cell(map.ctcssrx));
+    var dcsTxS=cell(map.dcstx), dcsRxS=cell(map.dcsrx);
+    var pol=cell(map.dcspol).toUpperCase();
+    var txInv=pol.charAt(0)==="R", rxInv=(pol.length>1?pol.charAt(1):pol.charAt(0))==="R";
+    if(mode==="tone"){
+      if(isFinite(ctcssTxV)) tx_tone=rptCtcssCode(ctcssTxV);
+    }else if(mode==="tsql" || mode==="t sql"){
+      if(isFinite(ctcssTxV)) tx_tone=rptCtcssCode(ctcssTxV);
+      if(isFinite(ctcssRxV)) rx_tone=rptCtcssCode(ctcssRxV); else rx_tone=tx_tone;
+    }else if(mode==="dtcs" || mode==="dcs" || mode==="d code"){
+      tx_tone=rptDcsCode(rptDcsDigits(dcsTxS), txInv);
+      rx_tone=rptDcsCode(rptDcsDigits(dcsRxS||dcsTxS), rxInv);
+    }else if(mode==="cross"){
+      if(dcsTxS){
+        tx_tone=rptDcsCode(rptDcsDigits(dcsTxS), txInv);
+        rx_tone=rptDcsCode(rptDcsDigits(dcsRxS||dcsTxS), rxInv);
+      }else{
+        if(isFinite(ctcssTxV)) tx_tone=rptCtcssCode(ctcssTxV);
+        if(isFinite(ctcssRxV)) rx_tone=rptCtcssCode(ctcssRxV);
+      }
+    }else if(map.tonemode<0){
+      /* No tone-mode column at all: use whatever tone columns carry. */
+      if(dcsTxS) tx_tone=rptDcsCode(rptDcsDigits(dcsTxS), txInv);
+      else if(isFinite(ctcssTxV)) tx_tone=rptCtcssCode(ctcssTxV);
+      if(dcsRxS) rx_tone=rptDcsCode(rptDcsDigits(dcsRxS), rxInv);
+      else if(isFinite(ctcssRxV)) rx_tone=rptCtcssCode(ctcssRxV);
+    }
+    if(!tx_tone && map.tonevalue>=0){
+      var tv=parseFloat(cell(map.tonevalue));
+      if(isFinite(tv)) tx_tone=rptCtcssCode(tv);
+    }
+  }
+  var name=cell(map.name) || cell(map.callsign);
+  if(!name) name="CH "+rxMHz.toFixed(4);
+  var city=cell(map.city), state=cell(map.state);
+  if(/^\d+$/.test(city)) city=""; /* CHIRP's "Location" column is the memory index, not a place */
+  var locality=(city && state)?(city+", "+state):(city||state||cell(map.comment));
+  var lat=parseFloat(cell(map.lat)), lon=parseFloat(cell(map.lon));
+  var rec={name:name.slice(0,40), rx_hz:rx_hz, tx_hz:tx_hz, tx_tone:tx_tone, rx_tone:rx_tone, locality:locality.slice(0,48)};
+  if(isFinite(lat) && isFinite(lon) && !(lat===0 && lon===0) && lat>=-90 && lat<=90 && lon>=-180 && lon<=180){ rec.lat=lat; rec.lon=lon; }
+  return rec;
+}
+function parseRepeaterCsv(text){
+  var rows=rptCsvRows(text);
+  if(rows.length<2) throw new Error("CSV needs a header row plus at least one data row.");
+  var hdrIdx=-1, colMap=null;
+  for(var r=0;r<Math.min(rows.length,5);r++){
+    var cm=rptCsvColMap(rows[r]);
+    if(cm.rxfreq>=0){ hdrIdx=r; colMap=cm; break; }
+  }
+  if(hdrIdx<0) throw new Error("No recognizable header row — expected columns like Name, Frequency, Duplex, Offset, Tone (CHIRP/RepeaterBook style) or name,freq_mhz,tone,lat,lon.");
+  /* The bare "Tone" header is ambiguous: CHIRP/RepeaterBook use it as
+     the tone MODE (words), a lone numeric tone column is a CTCSS value.
+     Decide from the first data value in that column. */
+  if(colMap.tonemode<0 && colMap.tone>=0){
+    var sample="";
+    for(var s=hdrIdx+1;s<rows.length;s++){ var v=(rows[s][colMap.tone]||"").trim(); if(v){ sample=v; break; } }
+    if(/^\d{2,3}(\.\d)?$/.test(sample)) colMap.tonevalue=colMap.tone;
+    else colMap.tonemode=colMap.tone;
+  }
+  var records=[], skipped=0;
+  for(var i=hdrIdx+1;i<rows.length;i++){
+    var rec=rptCsvRowToRecord(rows[i], colMap);
+    if(rec) records.push(rec); else skipped++;
+  }
+  return {records:records, skipped:skipped, format:"CSV"};
+}
+function parseRepeaterJson(text){
+  var data=JSON.parse(text);
+  var arr=null;
+  if(Array.isArray(data)) arr=data;
+  else if(data && Array.isArray(data.repeaters)) arr=data.repeaters;
+  if(!arr) throw new Error("JSON has no repeater array — expected this page's shard format (an object with a \"repeaters\" array).");
+  var records=[], skipped=0;
+  arr.forEach(function(e){
+    if(!e || typeof e!=="object"){ skipped++; return; }
+    var rxHz=Number(e.rx_hz||e.rx_freq_hz||0);
+    if(!rxHz && (e.freq_mhz!=null || e.frequency!=null)) rxHz=Math.round(rptFreqMHz(e.freq_mhz!=null?e.freq_mhz:e.frequency)*1000000);
+    if(!isFinite(rxHz) || rxHz<10000000 || rxHz>1300000000){ skipped++; return; }
+    var rec={
+      name:String(e.name||e.callsign||""),
+      rx_hz:rxHz,
+      tx_hz:Number(e.tx_hz||e.tx_freq_hz)||0,
+      tx_tone:Number(e.tx_tone)||0,
+      rx_tone:Number(e.rx_tone)||0,
+      locality:String(e.locality||e.city||"")
+    };
+    var lat=Number(e.lat!=null?e.lat:e.latitude);
+    var lon=Number(e.lon!=null?e.lon:(e.longitude!=null?e.longitude:e.lng));
+    if(isFinite(lat) && isFinite(lon) && !(lat===0 && lon===0) && lat>=-90 && lat<=90 && lon>=-180 && lon<=180){ rec.lat=lat; rec.lon=lon; }
+    if(!rec.name) rec.name="CH "+(rxHz/1000000).toFixed(4);
+    records.push(rec);
+  });
+  return {records:records, skipped:skipped, format:"shard JSON"};
+}
+function rptXmlText(s){
+  return String(s||"")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,"$1")
+    .replace(/<[^>]+>/g," ")
+    .replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+    .replace(/&amp;/g,"&")
+    .trim();
+}
+function rptRecordFromText(text, lat, lon){
+  /* Pull frequency / offset sign / tone / callsign out of free text (a
+     GPX waypoint's name+desc, a KML placemark's name+description).
+     RepeaterBook's GPX/KML metadata layout is not publicly documented,
+     so this is deliberately pattern-tolerant. */
+  var t=String(text||"");
+  var fm=/(\d{2,3}\.\d{3,4})/.exec(t);
+  if(!fm) return null;
+  var rxMHz=parseFloat(fm[1]);
+  if(rxMHz<10 || rxMHz>1300) return null;
+  var rx_hz=Math.round(rxMHz*1000000);
+  var tx_hz=rx_hz;
+  var sign=/\d{2,3}\.\d{3,4}\s*([+-])/.exec(t);
+  var off=rptStdOffsetMHz(rxMHz);
+  if(sign && off) tx_hz=rx_hz+(sign[1]==="-"?-1:1)*Math.round(off*1000000);
+  var tx_tone=0;
+  var dm=/(?:^|[^a-z0-9])dcs[^0-9]{0,4}([0-7]{3})\b/i.exec(t) || /\bd\s*0?([0-7]{3})\b/i.exec(t);
+  if(dm) tx_tone=rptDcsCode(dm[1], false);
+  if(!tx_tone){
+    var cm=/(?:pl|ctcss|tone)[^0-9]{0,4}(\d{2,3}\.\d)\b/i.exec(t);
+    if(cm) tx_tone=rptCtcssCode(parseFloat(cm[1]));
+  }
+  if(!tx_tone){
+    var all=t.match(/\d{2,3}\.\d\b/g)||[];
+    for(var i=0;i<all.length;i++){
+      var v=parseFloat(all[i]);
+      if(Math.abs(v-rxMHz)>0.001 && v>=60 && v<=260){ tx_tone=rptCtcssCode(v); if(tx_tone) break; }
+    }
+  }
+  var call=/\b([A-Za-z]{1,2}[0-9][A-Za-z]{1,4})\b/.exec(t);
+  return {name:call?call[1].toUpperCase():"", rx_hz:rx_hz, tx_hz:tx_hz, tx_tone:tx_tone, rx_tone:0, lat:lat, lon:lon, locality:""};
+}
+function parseRepeaterGpx(text){
+  var records=[], skipped=0;
+  var wptRe=/<wpt\b([^>]*)>([\s\S]*?)<\/wpt>/gi, m;
+  while((m=wptRe.exec(text))!==null){
+    var latM=/\blat="(-?[0-9.]+)"/.exec(m[1]), lonM=/\blon="(-?[0-9.]+)"/.exec(m[1]);
+    var lat=latM?parseFloat(latM[1]):NaN, lon=lonM?parseFloat(lonM[1]):NaN;
+    var body=m[2];
+    var nameM=/<name>([\s\S]*?)<\/name>/i.exec(body);
+    var descM=/<desc>([\s\S]*?)<\/desc>/i.exec(body);
+    var cmtM=/<cmt>([\s\S]*?)<\/cmt>/i.exec(body);
+    var combined=[nameM?rptXmlText(nameM[1]):"", descM?rptXmlText(descM[1]):"", cmtM?rptXmlText(cmtM[1]):""].join(" ");
+    var rec=(isFinite(lat) && isFinite(lon) && lat>=-90 && lat<=90 && lon>=-180 && lon<=180)?rptRecordFromText(combined, lat, lon):null;
+    if(rec){
+      if(!rec.name && nameM) rec.name=rptXmlText(nameM[1]).slice(0,40);
+      if(!rec.name) rec.name="CH "+(rec.rx_hz/1000000).toFixed(4);
+      records.push(rec);
+    }else skipped++;
+  }
+  if(!records.length && !skipped) throw new Error("No <wpt> waypoints found — this does not look like a GPX file.");
+  return {records:records, skipped:skipped, format:"GPX"};
+}
+function parseRepeaterKml(text){
+  var records=[], skipped=0;
+  var pmRe=/<Placemark\b[^>]*>([\s\S]*?)<\/Placemark>/gi, m;
+  while((m=pmRe.exec(text))!==null){
+    var body=m[1];
+    var co=/<coordinates>\s*(-?[0-9.]+)\s*,\s*(-?[0-9.]+)/i.exec(body);
+    if(!co){ skipped++; continue; }
+    var lon=parseFloat(co[1]), lat=parseFloat(co[2]); /* KML order is lon,lat */
+    var nameM=/<name>([\s\S]*?)<\/name>/i.exec(body);
+    var descM=/<description>([\s\S]*?)<\/description>/i.exec(body);
+    var combined=[nameM?rptXmlText(nameM[1]):"", descM?rptXmlText(descM[1]):""].join(" ");
+    var rec=rptRecordFromText(combined, lat, lon);
+    if(rec){
+      if(!rec.name && nameM) rec.name=rptXmlText(nameM[1]).slice(0,40);
+      if(!rec.name) rec.name="CH "+(rec.rx_hz/1000000).toFixed(4);
+      records.push(rec);
+    }else skipped++;
+  }
+  if(!records.length && !skipped) throw new Error("No <Placemark> entries found — this does not look like a KML file.");
+  return {records:records, skipped:skipped, format:"KML"};
+}
+function parseRepeaterFileText(text){
+  var t=String(text||"");
+  var head=t.replace(/^\uFEFF/,"").trim();
+  if(!head) throw new Error("The file is empty.");
+  if(head.charAt(0)==="{" || head.charAt(0)==="[") return parseRepeaterJson(t);
+  if(/<gpx[\s>]/i.test(head) || /<wpt[\s>]/i.test(head)) return parseRepeaterGpx(t);
+  if(/<kml[\s>]/i.test(head) || /<Placemark[\s>]/i.test(head)) return parseRepeaterKml(t);
+  return parseRepeaterCsv(t);
+}
+/* RPTIMPORT-END */
+function renderRptFileStatus(){
+  var st=$("rptFileStatus"); if(st) st.textContent=rptFileStatusText();
+  var bc=$("btnRptFileClear"); if(bc) bc.hidden=!S.rptbookFile;
+}
+function onRptFileChosen(ev){
+  var input=ev.target;
+  var file=input && input.files && input.files[0];
+  if(!file) return;
+  var st=$("rptFileStatus");
+  if(st){ st.textContent="Reading "+file.name+"…"; st.className="statusline run"; }
+  var reader=new FileReader();
+  reader.onload=function(){
+    try{
+      var parsed=parseRepeaterFileText(String(reader.result||""));
+      if(!parsed.records.length) throw new Error("No usable repeater records found ("+parsed.skipped+" row(s) skipped).");
+      S.rptbookFile={name:file.name, format:parsed.format, records:parsed.records, skipped:parsed.skipped};
+      if(st) st.className="statusline ok";
+      renderRptFileStatus();
+      logMsg("RPTBOOK file loaded: "+file.name+" — "+parsed.records.length+" repeater(s) parsed ("+parsed.format+"), "+parsed.skipped+" row(s) skipped. Read locally in the browser only; nothing was uploaded.","ok");
+    }catch(e){
+      S.rptbookFile=null;
+      if(st){ st.textContent="Could not use that file: "+e.message; st.className="statusline fail"; }
+      var bc=$("btnRptFileClear"); if(bc) bc.hidden=true;
+      logMsg("RPTBOOK file load failed ("+file.name+"): "+e.message,"err");
+    }
+  };
+  reader.onerror=function(){
+    if(st){ st.textContent="Could not read that file."; st.className="statusline fail"; }
+  };
+  reader.readAsText(file);
+}
+function clearRptFile(){
+  S.rptbookFile=null;
+  var inp=$("rptFile"); if(inp) inp.value="";
+  var st=$("rptFileStatus"); if(st) st.className="statusline";
+  renderRptFileStatus();
+  logMsg("RPTBOOK file cleared — lookups fall back to hosted shards / the owner-default block.");
 }
 /* ----- RPTBOOK: RPBK data block (byte-matches make_rpbk.py; source 1 = ZIP) ----- */
 function buildRpbkBlock(entries, source){
