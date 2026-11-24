@@ -106,6 +106,17 @@
     padding:6px 4px;min-height:36px}
   label.chk input{width:18px;height:18px;accent-color:var(--amber)}
   .small{font-size:12.5px;color:var(--faint)}
+  .info-grid{font-family:var(--mono);font-size:12.5px;margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--panel2);display:none;word-break:break-word}
+  .info-grid.show{display:block}
+  .info-grid .k{color:var(--faint)}
+  .slot-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;margin-top:10px}
+  .slot-table th,.slot-table td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+  .slot-table th{color:var(--faint);font-weight:700}
+  select{font-family:var(--sans);font-size:14px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;max-width:100%}
+  .confirmbox{display:none;border:1px solid var(--amber-dim);background:#221a0c;border-radius:8px;padding:12px 14px;margin-top:12px;font-size:14px}
+  .confirmbox.show{display:block}
+  .subsec{border-top:1px solid var(--line);margin-top:18px;padding-top:14px}
+  .subsec h3{font-size:14px;margin:0 0 4px}
   footer{margin-top:22px;color:var(--faint);font-size:12.5px;border-top:1px solid var(--line);padding-top:12px}
   /* Modal */
   .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;align-items:center;justify-content:center;padding:16px}
@@ -131,7 +142,11 @@
     <h1>AR-5RM <span class="accent">Web Flasher</span></h1>
     <div class="sub">Backup, bootloader probe, and firmware flash for the Baofeng AR-5RM over a USB
       programming cable — straight from the browser, no scripts to run. Follows the tested
-      <em>radio_read.py → bootloader_probe.py → flash_bf.py</em> sequence, in that order, enforced.</div>
+      <em>radio_read.py → bootloader_probe.py → flash_bf.py</em> sequence, in that order, enforced.
+      <strong>Step 4</strong> adds CPS settings &amp; apps for a radio already running the custom
+      <strong>bf-5rh</strong> firmware: that radio must be <strong>ON at its main screen</strong>
+      (not flash mode, not stock firmware). <strong>Host note:</strong> macOS + the Prolific-clone
+      cable does not work — use <strong>Windows Chrome/Edge</strong>.</div>
     <div class="support"><span class="dot" id="supportDot"></span><span id="supportText">Checking Web Serial support…</span></div>
   </header>
 
@@ -240,6 +255,102 @@
     <div class="statusline" id="flashStatus">Locked until every gate above is satisfied. Clicking Flash asks for one final confirmation before anything is written.</div>
   </section>
 
+  <!-- STEP 4 -->
+  <section class="step" id="secCps">
+    <h2><span class="stepnum">STEP 4</span> Radio settings &amp; apps (CPS) <span class="pill" id="cpsPill">locked</span></h2>
+    <div class="instr">
+      This step talks to a different radio state than Steps 1–3: the radio must be <strong>ON, running the
+      custom bf-5rh firmware, sitting at its normal standby / main screen</strong> — not flash mode, not stock.
+      It reuses the Step 0 port (115200 8N1). Nothing here auto-runs; every write below stays disabled until a
+      CPS handshake succeeds in this page session.
+      <div class="warnbox"><strong>bf-5rh dev unit only (the NRF unit).</strong> Unit 1 (BK) stays stock and must
+        never be CPS'd — it would not answer this protocol anyway. Only connect Step 4 to the dev unit.</div>
+      <ul>
+        <li>The radio scans for the CPS handshake at all times; on match its screen shows <strong>“CPS PROGRAMMING”</strong> and RF turns off.</li>
+        <li><strong>2-second idle timeout:</strong> if no CPS byte arrives for ~2 s the radio reboots out of the session on its own. This page refreshes the session automatically before an operation if it has gone stale, and keeps frames moving promptly during an operation.</li>
+        <li>The radio also reboots when the session ends — either via <strong>End CPS session</strong> below or ~2 s after the last CPS activity regardless.</li>
+        <li>Host note (same as Steps 1–3): macOS + the Prolific-clone cable does not work; use Windows Chrome/Edge.</li>
+      </ul>
+    </div>
+    <div class="row">
+      <button class="primary" id="btnCpsConnect" disabled>Connect (CPS handshake)</button>
+      <button id="btnCpsEnd" disabled>End CPS session</button>
+    </div>
+    <div class="statusline" id="cpsStatus">Locked until the port is connected (Step 0) and the CPS handshake succeeds. Start with the radio ON at its main screen.</div>
+
+    <div class="subsec">
+      <h3>Read radio info &amp; settings</h3>
+      <div class="instr">Reads the 168-byte settings record, then reads all 8 app slots to show what is installed.</div>
+      <div class="row">
+        <button class="primary" id="btnCpsRead" disabled>Read radio info &amp; settings</button>
+      </div>
+      <div class="warnbox" id="cpsTxWarn" style="display:none"><strong>TX Forbid is ON in settings — PTT is fully blocked regardless of band lock</strong></div>
+      <div class="info-grid" id="cpsInfo"></div>
+      <div id="cpsSlotWrap"></div>
+      <div class="statusline" id="cpsReadStatus">No settings read yet in this session.</div>
+    </div>
+
+    <div class="subsec">
+      <h3>Set band lock</h3>
+      <div class="instr">Changes <strong>only byte 29</strong> of the settings record. The page re-reads the record fresh,
+        writes it back with just that byte changed, then reads again — success is judged by the read-back, not the write ACK.
+        <span class="hint" title="The firmware re-parses the record on write and clamps out-of-range fields, but since we write back the record exactly as read — which is already the firmware's normalized form — only byte 29 changes.">(Why only byte 29 changes: the record is written back exactly as read, which is already the firmware's normalized form.)</span></div>
+      <label class="field" for="cpsProfileSelect">Band-lock profile<br />
+        <select id="cpsProfileSelect">
+          <option value="0">0 CE HAM — TX 144–146, 430–440 MHz</option>
+          <option value="1">1 FCC HAM — TX 144–148, 420–450 MHz</option>
+          <option value="2">2 GB HAM — TX 144–148, 430–440 MHz</option>
+          <option value="3">3 400-430 — TX 137–174, 400–430 MHz</option>
+          <option value="4">4 400-438 — TX 137–174, 400–438 MHz</option>
+          <option value="5">5 PMR446 — TX 446.00625–446.19375 MHz</option>
+          <option value="6" selected>6 GMRS/FRS — TX 462.550–462.725 + 467.550–467.725 MHz, plus MURS channels — Recommended — matches Preston's GMRS license (WSFQ833)</option>
+          <option value="7">7 CA HAM — TX 144–148, 430–450 MHz</option>
+          <option value="8">8 ALL LOCK — TX prohibited everywhere</option>
+          <option value="9">9 UNLOCK — TX anywhere the hardware tunes</option>
+        </select>
+      </label>
+      <div class="row">
+        <button class="primary" id="btnCpsSetBand" disabled>Set band lock…</button>
+      </div>
+      <div class="confirmbox" id="cpsConfirmBox">
+        <div id="cpsConfirmText"></div>
+        <div class="row">
+          <button class="primary" id="btnCpsConfirmBand">Confirm — write band lock</button>
+          <button id="btnCpsCancelBand">Cancel</button>
+        </div>
+      </div>
+      <div class="statusline" id="cpsBandStatus">Requires a successful CPS handshake and a settings read in this session, so the current value is known.</div>
+    </div>
+
+    <div class="subsec">
+      <h3>Install app (.app)</h3>
+      <div class="instr">Pick a <strong>.app</strong> package. The page validates its 108-byte header in the browser before anything is sent — a build-hash mismatch means the app was built for a different firmware ABI and the radio would refuse to run it, so install stays disabled. Install erases the chosen slot, writes the file in 512-byte chunks, then reads the slot back and byte-compares it; success is claimed only on a matching read-back.</div>
+      <div class="filebox">
+        <input type="file" id="cpsAppFile" accept=".app" />
+        <div class="filedetails" id="cpsAppDetails"></div>
+        <div class="valmsg" id="cpsAppValMsg"></div>
+      </div>
+      <label class="field" for="cpsSlotSelect">App slot<br />
+        <select id="cpsSlotSelect">
+          <option value="0">Slot 0</option>
+          <option value="1">Slot 1</option>
+          <option value="2">Slot 2</option>
+          <option value="3">Slot 3</option>
+          <option value="4">Slot 4</option>
+          <option value="5">Slot 5</option>
+          <option value="6">Slot 6</option>
+          <option value="7">Slot 7</option>
+        </select>
+      </label>
+      <div class="warnbox" id="cpsSlotBlindWarn"><strong>No slot read yet:</strong> the slot will be picked blind and its current contents (if any) will be erased. Run “Read radio info &amp; settings” first to see what is in each slot.</div>
+      <div class="row">
+        <button class="primary" id="btnCpsInstall" disabled>Install app</button>
+      </div>
+      <div class="progress" id="cpsProgress"><div></div></div>
+      <div class="statusline" id="cpsAppStatus">Pick a valid .app file to enable install. The CPS handshake must also have succeeded.</div>
+    </div>
+  </section>
+
   <!-- LOG -->
   <section class="step logsec" id="secLog">
     <h2><span class="stepnum">LOG</span> Session log</h2>
@@ -254,8 +365,9 @@
 
   <footer>
     Everything runs in this page, in memory only — no data is stored, sent anywhere, or kept after a
-    reload; reloading resets the backup/probe gates, so a fresh session always starts with a fresh backup.
-    Protocol: stock CPS read at 115200 baud; KDH bootloader frames with CRC16-XMODEM. Package prepared for
+    reload; reloading resets the backup/probe/CPS gates, so a fresh session always starts with a fresh backup.
+    Protocol: stock CPS read at 115200 baud; KDH bootloader frames with CRC16-XMODEM; bf-5rh CPS frames
+    (0xA6 + CRC16-XMODEM) at 115200 baud for Step 4. Package prepared for
     the first flash: <span style="font-family:var(--mono)">bf5rh-m0.BF</span> — 57,508 bytes,
     SHA-256 <span style="font-family:var(--mono)">b04356cbeebb91a1aa0b593e5e1414df1fc1a3cc6fae716b1f0c36875c90357e</span>.
   </footer>
@@ -357,7 +469,9 @@ var S={
   port:null, writer:null, reader:null, readLoopRunning:false,
   connected:false, running:false, runningOp:null, abort:false,
   backupDone:false, probeOk:false,
-  file:null, fileValid:false
+  file:null, fileValid:false,
+  cpsReady:false, cpsLastActivity:0, cpsSettings:null, cpsSettingsRead:false,
+  cpsSlots:null, cpsApp:null, cpsAppValid:false, cpsPendingProfile:null
 };
 
 /* ---------- RX buffer (single background reader fills this) ---------- */
@@ -470,6 +584,21 @@ function refreshControls(){
   $("btnAbortFlash").disabled=!(S.running && S.runningOp==="flash");
   $("fileInput").disabled=S.running || !serialSupported;
   $("shaInput").disabled=!S.file || S.running || !serialSupported;
+  /* Step 4 (CPS) gates */
+  var cpsDis=!S.connected || !!S.running || !serialSupported;
+  $("btnCpsConnect").disabled=cpsDis;
+  $("btnCpsEnd").disabled=cpsDis || !S.cpsReady;
+  $("btnCpsRead").disabled=cpsDis || !S.cpsReady;
+  $("btnCpsSetBand").disabled=cpsDis || !S.cpsReady || !S.cpsSettingsRead;
+  $("btnCpsConfirmBand").disabled=cpsDis || !S.cpsReady || !S.cpsSettingsRead;
+  $("btnCpsInstall").disabled=cpsDis || !S.cpsReady || !S.cpsAppValid;
+  $("cpsAppFile").disabled=!!S.running || !serialSupported;
+  $("cpsProfileSelect").disabled=!!S.running || !serialSupported;
+  $("cpsSlotSelect").disabled=!!S.running || !serialSupported;
+  if(S.runningOp!=="cpsConnect" && S.runningOp!=="cpsRead" && S.runningOp!=="cpsBand" && S.runningOp!=="cpsInstall" && S.runningOp!=="cpsEnd"){
+    if(S.cpsReady) setPill($("cpsPill"),"CPS ready","ok");
+    else setPill($("cpsPill"),"locked","");
+  }
   updateGates();
 }
 function setGate(el, met){
@@ -568,8 +697,8 @@ async function doDisconnect(){
     if(S.writer){ try{ S.writer.releaseLock(); }catch(e){} S.writer=null; }
     if(S.port){ try{ await S.port.close(); }catch(e){} S.port=null; }
   }finally{
-    S.connected=false; clearRx();
-    $("connInfo").textContent="Disconnected. Backup/probe gates from this session are kept; reconnect to continue.";
+    S.connected=false; S.cpsReady=false; clearRx();
+    $("connInfo").textContent="Disconnected. Backup/probe gates from this session are kept; the CPS gate is cleared (session ended with the port) — reconnect and handshake again for Step 4.";
     $("connInfo").className="statusline";
     setPill($("connPill"),"not connected","");
     logMsg("Port closed.","warn");
@@ -579,7 +708,7 @@ async function doDisconnect(){
 if(serialSupported && navigator.serial.addEventListener){
   navigator.serial.addEventListener("disconnect", function(ev){
     if(S.port && ev.target===S.port && S.connected){
-      S.connected=false; setPill($("connPill"),"cable unplugged","fail");
+      S.connected=false; S.cpsReady=false; setPill($("connPill"),"cable unplugged","fail");
       $("connInfo").textContent="Cable was unplugged. Reconnect (Step 0) to continue.";
       $("connInfo").className="statusline fail";
       logMsg("Serial device disconnected (cable unplugged).","err");
@@ -921,6 +1050,447 @@ function openConfirm(){
 }
 function closeConfirm(){ $("confirmOverlay").className="overlay"; }
 
+/* ---------- Step 4: bf-5rh CPS (CPS-SPEC.md) ---------- */
+var CPS_CMD={READ:0x52, WRITE:0x57, READ_FLASH_RAW:0x44, APP_ERASE:0x41, APP_WRITE:0x61, END:0x45, ERROR:0xEE};
+var CPS_ERRORS={0x01:"bad CRC",0x02:"bad address",0x03:"bad length / unknown command"};
+var CPS_SETTINGS_ADDR=0x9000, CPS_SETTINGS_LEN=168;
+var CPS_SLOT_BASE_WIRE=0x5300; /* flash 0x14C000 / 64 */
+/* EXPECTED_BUILD_HASH: CRC-32 of abi/src/lib.rs in upstream bf-5rh @ e52b236 — the exact firmware build flashed to the dev unit; see tools/web-flasher/CPS-SPEC.md §7.2. Recompute if the firmware is rebuilt with a changed ABI. */
+var EXPECTED_BUILD_HASH=0xDEC616E9;
+var BAND_PROFILES=[
+  {name:"CE HAM", ranges:"TX 144–146, 430–440 MHz"},
+  {name:"FCC HAM", ranges:"TX 144–148, 420–450 MHz"},
+  {name:"GB HAM", ranges:"TX 144–148, 430–440 MHz"},
+  {name:"400-430", ranges:"TX 137–174, 400–430 MHz"},
+  {name:"400-438", ranges:"TX 137–174, 400–438 MHz"},
+  {name:"PMR446", ranges:"TX 446.00625–446.19375 MHz"},
+  {name:"GMRS/FRS", ranges:"TX 462.550–462.725 + 467.550–467.725 MHz, plus MURS channels"},
+  {name:"CA HAM", ranges:"TX 144–148, 430–450 MHz"},
+  {name:"ALL LOCK", ranges:"TX prohibited everywhere"},
+  {name:"UNLOCK", ranges:"TX anywhere the hardware tunes"}
+];
+function profileLabel(n){
+  if(n>=0 && n<BAND_PROFILES.length) return BAND_PROFILES[n].name+" (profile "+n+") — "+BAND_PROFILES[n].ranges;
+  return "Unknown profile (byte 29 = "+n+")";
+}
+function u32le(b,off){ return ((b[off]) | (b[off+1]<<8) | (b[off+2]<<16) | ((b[off+3]<<24)>>>0))>>>0; }
+function decodeAsciiTrim(bytes){
+  var s="";
+  for(var i=0;i<bytes.length;i++){ var c=bytes[i]; if(c===0) break; if(c>=32 && c<127) s+=String.fromCharCode(c); else if(c!==0) s+=" "; }
+  return s.replace(/^\s+|\s+$/g,"");
+}
+function decodeAsciiField(bytes){
+  var s="";
+  for(var i=0;i<bytes.length;i++){ var c=bytes[i]; s+=(c>=32 && c<127)?String.fromCharCode(c):" "; }
+  return s.replace(/^\s+|\s+$/g,"");
+}
+function cpsTouch(){ S.cpsLastActivity=Date.now(); }
+function buildCpsFrame(cmd, addr, data){
+  data=data||new Uint8Array(0);
+  var len=data.length;
+  var body=new Uint8Array(5+len);
+  body[0]=cmd; body[1]=(addr>>8)&0xFF; body[2]=addr&0xFF; body[3]=(len>>8)&0xFF; body[4]=len&0xFF;
+  body.set(data,5);
+  var crc=crc16Xmodem(body);
+  var frame=new Uint8Array(8+len);
+  frame[0]=0xA6; frame.set(body,1);
+  frame[6+len]=(crc>>8)&0xFF; frame[7+len]=crc&0xFF;
+  return frame;
+}
+async function waitForCpsAck(timeoutMs){
+  var start=Date.now();
+  while(Date.now()-start<timeoutMs){
+    var idx=rxBuf.indexOf(0x06);
+    if(idx>=0){ rxBuf.splice(0, idx+1); cpsTouch(); return true; }
+    var rem=timeoutMs-(Date.now()-start);
+    if(rem<=0) break;
+    await waitRx(Math.min(rem,50));
+  }
+  return rxBuf.indexOf(0x06)>=0;
+}
+async function cpsHandshake(){
+  var magic=asciiBytes("PROGRAMBF-5RH");
+  for(var attempt=1; attempt<=5; attempt++){
+    clearRx();
+    logMsg("CPS handshake attempt "+attempt+" of 5 — sending PROGRAMBF-5RH (radio must be ON, bf-5rh, at its main screen). Waiting up to 1.0 s for 0x06…","",magic);
+    await writeBytes(magic); cpsTouch();
+    var ok=await waitForCpsAck(1000);
+    if(ok){
+      S.cpsReady=true; cpsTouch();
+      logMsg("CPS handshake ACKed (0x06) — radio is in CPS mode (screen should show CPS PROGRAMMING). CPS gate satisfied.","ok",Uint8Array.from([0x06]));
+      setPill($("cpsPill"),"CPS ready","ok");
+      $("cpsStatus").textContent="CPS session open. Remember the 2 s idle timeout — this page refreshes the session before an operation if it has gone stale.";
+      $("cpsStatus").className="statusline ok";
+      return true;
+    }
+    logMsg("CPS handshake attempt "+attempt+" of 5 — no 0x06 heard in 1.0 s.","warn");
+  }
+  throw new Error("CPS handshake failed after 5 attempts — no 0x06 from the radio. Check the radio is the bf-5rh dev unit, ON at its main screen (not flash mode, not stock), the cable is seated hard, and you are on Windows Chrome/Edge.");
+}
+async function ensureCpsSession(){
+  if(!S.cpsReady) throw new Error("CPS handshake has not succeeded in this session yet — click Connect (CPS handshake) first.");
+  var elapsed=Date.now()-S.cpsLastActivity;
+  if(elapsed>1500){
+    logMsg("CPS session refreshed (radio idle-timeout is 2 s)","warn");
+    await cpsHandshake();
+  }
+}
+async function readCpsFrame(timeoutMs){
+  var start=Date.now(); var heard0=rxHeardTotal;
+  async function take(n){
+    var out=[];
+    while(out.length<n){
+      if(rxBuf.length){
+        var t=Math.min(n-out.length, rxBuf.length);
+        for(var i=0;i<t;i++) out.push(rxBuf.shift());
+        continue;
+      }
+      var rem=timeoutMs-(Date.now()-start);
+      if(rem<=0) return null;
+      await waitRx(Math.min(rem,50));
+    }
+    return out;
+  }
+  var sync=null;
+  while(Date.now()-start<timeoutMs){
+    var one=await take(1);
+    if(!one) break;
+    if(one[0]===0xA6){ sync=one; break; }
+  }
+  if(!sync) return {status:(rxHeardTotal>heard0?"malformed":"timeout"), reason:"no 0xA6 header", heard:rxHeardTotal-heard0};
+  var hdr=await take(5);
+  if(!hdr) return {status:"malformed", reason:"truncated header", heard:rxHeardTotal-heard0};
+  var cmd=hdr[0], addr=(hdr[1]<<8)|hdr[2], len=(hdr[3]<<8)|hdr[4];
+  if(len>512) return {status:"malformed", reason:"implausible length "+len, heard:rxHeardTotal-heard0, cmd:cmd, addr:addr};
+  var rest=await take(len+2);
+  if(!rest) return {status:"malformed", reason:"truncated frame", heard:rxHeardTotal-heard0, cmd:cmd, addr:addr};
+  var data=rest.slice(0,len);
+  var crcRx=(rest[len]<<8)|rest[len+1];
+  var body=new Uint8Array(5+len); body.set(hdr,0); body.set(data,5);
+  var crcCalc=crc16Xmodem(body);
+  var raw=new Uint8Array(8+len); raw[0]=0xA6; raw.set(hdr,1); raw.set(rest,6);
+  if(crcCalc!==crcRx) return {status:"malformed", reason:"CRC mismatch", heard:rxHeardTotal-heard0, raw:raw, cmd:cmd, addr:addr, data:data};
+  return {status:"frame", cmd:cmd, addr:addr, data:Uint8Array.from(data), heard:rxHeardTotal-heard0, raw:raw};
+}
+function cpsNamedError(code){
+  var name=CPS_ERRORS[code]||"unknown error";
+  var e=new Error("Radio returned CPS error "+hexByte(code)+" — "+name);
+  e.cpsCode=code; e.cpsName=name;
+  return e;
+}
+async function cpsTransact(cmd, addr, data){
+  data=data||new Uint8Array(0);
+  var frame=buildCpsFrame(cmd, addr, data);
+  /* Reference check for the settings read frame is asserted in init logging (debug only). */
+  for(var a=1;a<=5;a++){
+    clearRx();
+    await writeBytes(frame); cpsTouch();
+    var r=await readCpsFrame(2000);
+    if(r.status==="frame"){
+      cpsTouch();
+      if(r.cmd===CPS_CMD.ERROR){
+        var code=(r.data && r.data.length)?r.data[0]:0;
+        var nm=CPS_ERRORS[code]||"unknown error";
+        logMsg("CPS command "+hexByte(cmd)+" at addr 0x"+addr.toString(16).padStart(4,"0")+": radio ERROR "+hexByte(code)+" — "+nm+". Aborting immediately (no retry).","err",r.raw);
+        throw cpsNamedError(code);
+      }
+      if(r.cmd!==cmd || r.addr!==addr){
+        logMsg("CPS command "+hexByte(cmd)+": response echo mismatch (got cmd "+hexByte(r.cmd)+", addr 0x"+r.addr.toString(16)+") — attempt "+a+" of 5"+(a<5?", retrying.":"."),"warn",r.raw);
+        continue;
+      }
+      return r;
+    }
+    logMsg("CPS command "+hexByte(cmd)+" addr 0x"+addr.toString(16).padStart(4,"0")+": "+(r.status==="timeout"?"no reply":"malformed reply ("+r.reason+")")+" — attempt "+a+" of 5"+(a<5?", retrying.":"."),"warn",r.raw||frame);
+  }
+  throw new Error("CPS command "+hexByte(cmd)+" at addr 0x"+addr.toString(16).padStart(4,"0")+" got no valid response after 5 attempts.");
+}
+async function doCpsConnect(){
+  setRunning("cpsConnect");
+  setPill($("cpsPill"),"handshaking","run");
+  var st=$("cpsStatus"); st.className="statusline run"; st.textContent="Handshaking…";
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    logMsg("CPS: DTR + RTS asserted (same port settings as Steps 1–3: 115200 8N1).");
+    await sleep(100);
+    await cpsHandshake();
+    st.textContent="CPS session open — radio should show CPS PROGRAMMING. Pick an operation below promptly; the page will refresh the session if it goes stale.";
+    st.className="statusline ok";
+  }catch(e){
+    S.cpsReady=false;
+    setPill($("cpsPill"),"handshake failed","fail");
+    st.textContent="CPS handshake failed: "+e.message; st.className="statusline fail";
+    logMsg("CPS handshake failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
+}
+async function doCpsEnd(){
+  /* If the session already idled out, the radio has already rebooted — say so honestly. */
+  if(S.cpsReady && (Date.now()-S.cpsLastActivity>1500)){
+    S.cpsReady=false;
+    setPill($("cpsPill"),"session ended (idle)","");
+    $("cpsStatus").textContent="CPS session had already idled past the 2 s timeout — the radio has rebooted out of CPS on its own. No END frame was sent.";
+    $("cpsStatus").className="statusline";
+    logMsg("CPS end: session already idle-timed out (>1.5 s since last exchange) — radio already rebooted out of CPS; nothing sent.","warn");
+    refreshControls();
+    return;
+  }
+  setRunning("cpsEnd");
+  try{
+    await cpsTransact(CPS_CMD.END, 0, new Uint8Array(0));
+    logMsg("CPS session ended (CMD_END ACKed) — radio is rebooting to its normal screen.","ok");
+    $("cpsStatus").textContent="CPS session ended — radio rebooting. Handshake again to start a new CPS session.";
+    $("cpsStatus").className="statusline ok";
+  }catch(e){
+    logMsg("CPS end failed: "+e.message+" — the radio will still reboot out of CPS ~2 s after the last activity.","err");
+    $("cpsStatus").textContent="End failed: "+e.message+" The radio will still exit CPS on its 2 s idle timeout.";
+    $("cpsStatus").className="statusline fail";
+  }finally{
+    S.cpsReady=false;
+    setRunning(null); refreshControls();
+  }
+}
+function renderCpsSettings(){
+  var d=S.cpsSettings; if(!d) return;
+  var prof=d[29];
+  var batt=(d[21] | (d[22]<<8));
+  var line1=decodeAsciiField(d.slice(40,56));
+  var line2=decodeAsciiField(d.slice(56,72));
+  $("cpsTxWarn").style.display=(d[3]!==0)?"block":"none";
+  var el=$("cpsInfo");
+  el.innerHTML=
+    "<span class='k'>Band lock:</span> "+escapeHtml(profileLabel(prof))+"<br/>"+
+    "<span class='k'>TX Forbid (byte 3):</span> "+d[3]+" "+(d[3]!==0?"— ON (PTT fully blocked)":"— off")+"<br/>"+
+    "<span class='k'>Boot text line 1:</span> "+escapeHtml(line1||"(blank)")+"<br/>"+
+    "<span class='k'>Boot text line 2:</span> "+escapeHtml(line2||"(blank)")+"<br/>"+
+    "<span class='k'>Battery cal raw (bytes 21–22, u16 LE):</span> "+batt+" (0x"+batt.toString(16).padStart(4,"0")+")";
+  el.className="info-grid show";
+}
+function renderCpsSlots(){
+  var wrap=$("cpsSlotWrap");
+  if(!S.cpsSlots){ wrap.innerHTML=""; return; }
+  var html="<table class='slot-table'><thead><tr><th>Slot</th><th>Status</th><th>App</th><th>Segments</th></tr></thead><tbody>";
+  for(var i=0;i<S.cpsSlots.length;i++){
+    var s=S.cpsSlots[i];
+    var status=s.state==="empty"?"EMPTY":(s.state==="ok"?"Installed":"occupied — unknown/corrupt (magic/hash mismatch)");
+    html+="<tr><td>"+i+"</td><td>"+escapeHtml(status)+"</td><td>"+escapeHtml(s.state==="ok"?s.name:"—")+"</td><td>"+(s.state==="ok"?s.segCount:"—")+"</td></tr>";
+  }
+  html+="</tbody></table>";
+  wrap.innerHTML=html;
+  renderCpsSlotOptions();
+}
+function renderCpsSlotOptions(){
+  var sel=$("cpsSlotSelect");
+  var prev=sel.value;
+  sel.innerHTML="";
+  for(var i=0;i<8;i++){
+    var opt=document.createElement("option"); opt.value=String(i);
+    var label="Slot "+i;
+    if(S.cpsSlots){
+      var s=S.cpsSlots[i];
+      if(s.state==="empty") label+=" — EMPTY";
+      else if(s.state==="ok") label+=" — "+s.name;
+      else label+=" — occupied — unknown/corrupt";
+    }
+    opt.textContent=label; sel.appendChild(opt);
+  }
+  if(S.cpsSlots){
+    $("cpsSlotBlindWarn").style.display="none";
+    var firstEmpty=-1;
+    for(var j=0;j<8;j++){ if(S.cpsSlots[j].state==="empty"){ firstEmpty=j; break; } }
+    sel.value=String(firstEmpty>=0?firstEmpty:0);
+  }else{
+    $("cpsSlotBlindWarn").style.display="block";
+    if(prev!=="" && prev!=null) sel.value=prev;
+  }
+}
+async function doCpsRead(){
+  setRunning("cpsRead");
+  setPill($("cpsPill"),"reading","run");
+  var st=$("cpsReadStatus"); st.className="statusline run"; st.textContent="Reading settings…";
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    await ensureCpsSession();
+    logMsg("CPS read: READ settings at 0x9000 (168 bytes)…");
+    var resp=await cpsTransact(CPS_CMD.READ, CPS_SETTINGS_ADDR, new Uint8Array(0));
+    if(!resp.data || resp.data.length!==CPS_SETTINGS_LEN) throw new Error("Settings read returned "+(resp.data?resp.data.length:0)+" bytes — expected 168.");
+    S.cpsSettings=Uint8Array.from(resp.data); S.cpsSettingsRead=true;
+    logMsg("CPS read: settings received — band lock byte 29 = "+S.cpsSettings[29]+" ("+profileLabel(S.cpsSettings[29])+"); TX Forbid byte 3 = "+S.cpsSettings[3]+".","ok",S.cpsSettings);
+    if(S.cpsSettings[3]!==0) logMsg("TX Forbid is ON in settings — PTT is fully blocked regardless of band lock","warn");
+    renderCpsSettings();
+    var slots=[];
+    for(var s=0;s<8;s++){
+      st.textContent="Reading app slots — slot "+(s+1)+" of 8…";
+      var base=CPS_SLOT_BASE_WIRE + s*0x200;
+      var r1=await cpsTransact(CPS_CMD.READ_FLASH_RAW, base, new Uint8Array(0));
+      var r2=await cpsTransact(CPS_CMD.READ_FLASH_RAW, base+1, new Uint8Array(0));
+      if(r1.data.length!==64 || r2.data.length!==64) throw new Error("App slot "+s+" raw read returned unexpected length ("+r1.data.length+"/"+r2.data.length+", expected 64/64).");
+      var hdr=new Uint8Array(128); hdr.set(r1.data,0); hdr.set(r2.data,64);
+      var allFF=true; for(var k=0;k<108;k++){ if(hdr[k]!==0xFF){ allFF=false; break; } }
+      if(allFF){ slots.push({state:"empty", name:"", segCount:0}); logMsg("CPS slots: slot "+s+" — EMPTY."); continue; }
+      var magic=decodeAsciiTrim(hdr.slice(0,4));
+      var hash=u32le(hdr,4);
+      var seg=hdr[8];
+      var nm=decodeAsciiTrim(hdr.slice(12,28));
+      if(magic==="OVL1" && hash===EXPECTED_BUILD_HASH){ slots.push({state:"ok", name:nm||"(unnamed)", segCount:seg}); logMsg("CPS slots: slot "+s+" — "+(nm||"(unnamed)")+", "+seg+" segment(s), build hash matches.","ok"); }
+      else { slots.push({state:"unknown", name:"", segCount:0}); logMsg("CPS slots: slot "+s+" — occupied — unknown/corrupt (magic/hash mismatch: magic '"+magic+"', hash 0x"+hash.toString(16).padStart(8,"0")+").","warn"); }
+    }
+    S.cpsSlots=slots;
+    renderCpsSlots();
+    setPill($("cpsPill"),"CPS ready","ok");
+    st.textContent="Read complete: settings + 8 app slots. Band lock is "+profileLabel(S.cpsSettings[29])+".";
+    st.className="statusline ok";
+    logMsg("CPS read complete: settings and slot table stored for Set band lock / Install app.","ok");
+  }catch(e){
+    setPill($("cpsPill"),"read failed","fail");
+    st.textContent="Read failed: "+e.message; st.className="statusline fail";
+    logMsg("CPS read failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
+}
+function onCpsSetBandClick(){
+  if(!S.cpsSettingsRead || !S.cpsSettings) return;
+  var m=parseInt($("cpsProfileSelect").value,10);
+  var n=S.cpsSettings[29];
+  var curName=(n>=0 && n<BAND_PROFILES.length)?BAND_PROFILES[n].name:("Unknown");
+  var newName=BAND_PROFILES[m].name;
+  S.cpsPendingProfile=m;
+  $("cpsConfirmText").textContent="Change band lock from "+curName+" (profile "+n+") to "+newName+" (profile "+m+")?";
+  $("cpsConfirmBox").className="confirmbox show";
+  logMsg("Band lock: confirmation requested — from "+curName+" (profile "+n+") to "+newName+" (profile "+m+"). Nothing written yet.");
+}
+async function doCpsSetBandConfirmed(){
+  var m=S.cpsPendingProfile;
+  $("cpsConfirmBox").className="confirmbox";
+  if(m===null || m===undefined) return;
+  setRunning("cpsBand");
+  var st=$("cpsBandStatus"); st.className="statusline run"; st.textContent="Setting band lock…";
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    await ensureCpsSession();
+    logMsg("Band lock: fresh READ at 0x9000 before write…");
+    var fresh=await cpsTransact(CPS_CMD.READ, CPS_SETTINGS_ADDR, new Uint8Array(0));
+    if(fresh.data.length!==CPS_SETTINGS_LEN) throw new Error("Fresh settings read returned "+fresh.data.length+" bytes — expected 168. Aborting write.");
+    var before=fresh.data[29];
+    logMsg("Band lock: before — byte 29 = "+before+" ("+profileLabel(before)+").");
+    var copy=Uint8Array.from(fresh.data); copy[29]=m;
+    logMsg("Band lock: WRITE at 0x9000 with full 168 bytes, only byte 29 changed "+before+" → "+m+"…");
+    await cpsTransact(CPS_CMD.WRITE, CPS_SETTINGS_ADDR, copy);
+    logMsg("Band lock: write ACKed. Reading back to verify…");
+    var verify=await cpsTransact(CPS_CMD.READ, CPS_SETTINGS_ADDR, new Uint8Array(0));
+    var after=verify.data[29];
+    logMsg("Band lock: after — byte 29 = "+after+" ("+profileLabel(after)+").");
+    S.cpsSettings=Uint8Array.from(verify.data); S.cpsSettingsRead=true;
+    renderCpsSettings();
+    if(after===m){
+      st.textContent="Band lock set and verified by read-back: "+profileLabel(m)+".";
+      st.className="statusline ok";
+      logMsg("Band lock SUCCESS (verified by read-back): byte 29 "+before+" → "+after+".","ok");
+    }else{
+      st.textContent="Band lock FAILED on read-back: expected byte 29 = "+m+", read back "+after+". The write ACK alone is not trusted.";
+      st.className="statusline fail";
+      logMsg("Band lock FAILED on read-back: expected "+m+", got "+after+".","err");
+    }
+  }catch(e){
+    st.textContent="Set band lock failed: "+e.message; st.className="statusline fail";
+    logMsg("Set band lock failed: "+e.message,"err");
+  }finally{ S.cpsPendingProfile=null; setRunning(null); refreshControls(); }
+}
+async function onCpsAppChosen(){
+  var input=$("cpsAppFile");
+  var det=$("cpsAppDetails"), vm=$("cpsAppValMsg");
+  det.className="filedetails"; det.innerHTML=""; vm.className="valmsg"; vm.textContent="";
+  S.cpsApp=null; S.cpsAppValid=false;
+  if(!input.files || !input.files.length){ refreshControls(); return; }
+  var file=input.files[0];
+  var buf=new Uint8Array(await file.arrayBuffer());
+  var problems=[];
+  var appName="", segCount=null, hash=null;
+  if(buf.length<108) problems.push("File is only "+buf.length+" bytes — an .app package needs at least the 108-byte header.");
+  if(buf.length>32768) problems.push("File is "+buf.length+" bytes — maximum slot size is 32,768 bytes.");
+  if(buf.length>=108){
+    var magic=decodeAsciiTrim(buf.slice(0,4));
+    if(magic!=="OVL1") problems.push("Bad magic: bytes 0–3 are not ASCII 'OVL1'.");
+    hash=u32le(buf,4);
+    if(hash!==EXPECTED_BUILD_HASH) problems.push("Build-hash mismatch: file hash 0x"+hash.toString(16).padStart(8,"0").toUpperCase()+" does not equal expected 0x"+EXPECTED_BUILD_HASH.toString(16).padStart(8,"0").toUpperCase()+" — the app was built for a different firmware ABI and the radio would refuse to run it.");
+    segCount=buf[8];
+    if(!(segCount>=1 && segCount<=4)) problems.push("Segment count is "+segCount+" — expected 1–4.");
+    appName=decodeAsciiTrim(buf.slice(12,28));
+  }
+  S.cpsApp={name:file.name, size:buf.length, bytes:buf, appName:appName, segCount:segCount, hash:hash};
+  det.innerHTML="<span class='k'>File:</span> "+escapeHtml(file.name)+"<br/><span class='k'>Size:</span> "+buf.length+" bytes<br/><span class='k'>App name:</span> "+escapeHtml(appName||"(none parsed)")+"<br/><span class='k'>Segments:</span> "+segCount+"<br/><span class='k'>Build hash:</span> "+(hash!==null?("0x"+hash.toString(16).padStart(8,"0").toUpperCase()):"—");
+  det.className="filedetails show";
+  if(problems.length===0){
+    S.cpsAppValid=true;
+    vm.textContent="Validation passed — header OK (OVL1, build hash matches this firmware, "+segCount+" segment(s)). Install is enabled once the CPS handshake has succeeded.";
+    vm.className="valmsg show ok";
+    logMsg("App package loaded: "+file.name+" ("+buf.length+" bytes, '"+appName+"', "+segCount+" segment(s)). Header validation passed.","ok");
+  }else{
+    S.cpsAppValid=false;
+    vm.textContent="Rejected: "+problems.join(" ");
+    vm.className="valmsg show fail";
+    logMsg("App package rejected: "+problems.join(" "),"err");
+  }
+  refreshControls();
+}
+async function doCpsInstall(){
+  var app=S.cpsApp; if(!app || !S.cpsAppValid) return;
+  var slot=parseInt($("cpsSlotSelect").value,10);
+  setRunning("cpsInstall");
+  var st=$("cpsAppStatus"); st.className="statusline run";
+  var bar=$("cpsProgress"); bar.className="progress show"; bar.firstElementChild.style.width="0%";
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    await ensureCpsSession();
+    var paddedLen=Math.ceil(app.size/512)*512;
+    var padded=new Uint8Array(paddedLen); padded.fill(0xFF); padded.set(app.bytes,0);
+    var chunks=paddedLen/512;
+    logMsg("App install: slot "+slot+", '"+app.appName+"', "+app.size+" bytes padded to "+paddedLen+" ("+chunks+" chunk(s) of 512). Erasing slot first (same session)…");
+    st.textContent="Erasing slot "+slot+"…";
+    try{ await cpsTransact(CPS_CMD.APP_ERASE, slot, new Uint8Array(0)); }
+    catch(e){
+      if(e.cpsCode===0x02) throw new Error("APP_ERASE failed with bad address (0x02). Abort — re-run the whole install (the session/slot state may have been lost).");
+      throw e;
+    }
+    logMsg("App install: slot "+slot+" erased (ACK). Writing chunks…","ok");
+    for(var i=0;i<chunks;i++){
+      var off=i*512;
+      var chunk=padded.slice(off, off+512);
+      try{ await cpsTransact(CPS_CMD.APP_WRITE, off, chunk); }
+      catch(e){
+        if(e.cpsCode===0x02) throw new Error("APP_WRITE failed with bad address (0x02) at offset "+off+" (chunk "+(i+1)+"/"+chunks+"). Abort — re-run the whole install (the session/slot state may have been lost).");
+        throw e;
+      }
+      bar.firstElementChild.style.width=Math.round((i+1)/chunks*60)+"%";
+      st.textContent="Installing — app chunk "+(i+1)+"/"+chunks+"…";
+      if(((i+1)%4===0) || i===chunks-1 || i===0) logMsg("App install: app chunk "+(i+1)+"/"+chunks+" ACKed.");
+    }
+    logMsg("App install: all chunks ACKed. Verifying by read-back ("+paddedLen+" bytes)…");
+    st.textContent="Verifying — reading the slot back…";
+    var readBack=new Uint8Array(paddedLen);
+    var reads=paddedLen/64;
+    var base=CPS_SLOT_BASE_WIRE + slot*0x200;
+    for(var j=0;j<reads;j++){
+      var rr=await cpsTransact(CPS_CMD.READ_FLASH_RAW, base+j, new Uint8Array(0));
+      if(rr.data.length!==64) throw new Error("Verify read at wire addr 0x"+(base+j).toString(16)+" returned "+rr.data.length+" bytes — expected 64.");
+      readBack.set(rr.data, j*64);
+      if(j%16===0) bar.firstElementChild.style.width=(60+Math.round((j+1)/reads*40))+"%";
+    }
+    bar.firstElementChild.style.width="100%";
+    var mismatch=-1;
+    for(var k=0;k<paddedLen;k++){ if(readBack[k]!==padded[k]){ mismatch=k; break; } }
+    if(mismatch===-1){
+      st.textContent="Installed and verified — read-back matches. Press “Read radio info & settings” again to see the slot listed. The radio reboots when the CPS session ends (End CPS session or ~2 s idle), after which the app appears in the radio's MENU launcher.";
+      st.className="statusline ok";
+      logMsg("App install SUCCESS: verified — read-back matches ("+paddedLen+" bytes, slot "+slot+").","ok");
+    }else{
+      st.textContent="Install FAILED verification: first mismatching offset "+mismatch+" (expected 0x"+padded[mismatch].toString(16).padStart(2,"0")+", read 0x"+readBack[mismatch].toString(16).padStart(2,"0")+"). Do not trust this slot — re-run the install.";
+      st.className="statusline fail";
+      logMsg("App install verification FAILED at offset "+mismatch+".","err");
+    }
+  }catch(e){
+    st.textContent="Install failed: "+e.message; st.className="statusline fail";
+    logMsg("App install failed: "+e.message,"err");
+  }finally{ setRunning(null); refreshControls(); }
+}
+
 /* ---------- wiring ---------- */
 $("btnConnect").addEventListener("click", doConnect);
 $("btnDisconnect").addEventListener("click", doDisconnect);
@@ -933,6 +1503,14 @@ $("shaInput").addEventListener("input", updateGates);
 $("btnFlash").addEventListener("click", openConfirm);
 $("btnCancelFlash").addEventListener("click", closeConfirm);
 $("btnConfirmFlash").addEventListener("click", function(){ closeConfirm(); if(allGatesMet() && S.connected && !S.running) doFlash(); });
+$("btnCpsConnect").addEventListener("click", doCpsConnect);
+$("btnCpsEnd").addEventListener("click", doCpsEnd);
+$("btnCpsRead").addEventListener("click", doCpsRead);
+$("btnCpsSetBand").addEventListener("click", onCpsSetBandClick);
+$("btnCpsCancelBand").addEventListener("click", function(){ S.cpsPendingProfile=null; $("cpsConfirmBox").className="confirmbox"; logMsg("Band lock: change cancelled — nothing written."); });
+$("btnCpsConfirmBand").addEventListener("click", doCpsSetBandConfirmed);
+$("cpsAppFile").addEventListener("change", onCpsAppChosen);
+$("btnCpsInstall").addEventListener("click", doCpsInstall);
 $("chkHex").addEventListener("change", renderAllLog);
 $("btnClearLog").addEventListener("click", function(){ logEntries=[]; $("logBox").innerHTML=""; });
 $("btnDownloadLog").addEventListener("click", function(){
