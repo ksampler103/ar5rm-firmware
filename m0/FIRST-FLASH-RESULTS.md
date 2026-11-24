@@ -51,3 +51,22 @@ Extend the web flasher with bf-5rh CPS support (PROGRAMBF-5RH transport):
 (1) read/write the settings record's band_lock byte; (2) push overlay app
 packages into slots. Both ride the same CPS framing (mod's cps_proto.py is
 the reference implementation).
+
+## Phase 1 CPS session — results (2026-11-24, Windows, web flasher Step 4)
+First live CPS exchange against real hardware: full success, log archived
+from Preston's session (03:05–03:08 EST).
+- Settings read: band_lock byte 29 = **0 (CE HAM)** — the record matches
+  Settings::DEFAULT (e.g. battery_cal_raw 2537), i.e. bf-5rh wrote first-boot
+  defaults; the stock firmware's settings were not carried into this record.
+  That fully explains "TX PROHIBITED" on GMRS (CE allows only 144–146 /
+  430–440). TX Forbid byte 3 = 0.
+- Band lock changed **0 → 9 (UNLOCK)** at Preston's direction (the page
+  recommended GMRS/FRS 6; he chose UNLOCK in the confirm step). Write ACKed,
+  verified by read-back; a later independent read confirmed byte 29 = 9.
+- Apps installed and verified by full read-back byte-compare:
+  settings.app -> slot 0 (20,480 B padded), fm.app -> slot 1 (4,096 B padded).
+  Final slot map read: slot 0 SETTINGS (3 segments), slot 1 FM, slots 2–7
+  EMPTY, build hash matches on both.
+- Preston's bench verdict: "Both apps work great" — FM app launches (5807M
+  path exercised via the app) and Settings app runs. Remaining bench items:
+  GMRS TX test with the stock BK unit listening, FM audio quality report.
