@@ -60,6 +60,41 @@ APP_META = {
         "name": "CHANMGR",
         "notes": "Channel manager.",
     },
+    "satellite.app": {
+        "id": "satellite",
+        "name": "SATELLITE",
+        "notes": "Satellite pass prediction + tracking (needs satellite table + observer position).",
+    },
+    "search.app": {
+        "id": "search",
+        "name": "SEARCH",
+        "notes": "Frequency search / found-frequency list.",
+    },
+    "scanqt.app": {
+        "id": "scanqt",
+        "name": "SCANQT",
+        "notes": "CTCSS/DCS tone hunter on the current channel.",
+    },
+    "actlog.app": {
+        "id": "actlog",
+        "name": "ACTLOG",
+        "notes": "Activity logger: scans programmed channels, logs squelch hits (persistent).",
+    },
+    "rptbook.app": {
+        "id": "rptbook",
+        "name": "RPTBOOK",
+        "notes": "Repeater book: Preston's programmed channels as a tuneable directory (accepts injected ZIP data).",
+    },
+    "foxhunt.app": {
+        "id": "foxhunt",
+        "name": "FOXHUNT",
+        "notes": "Direction-finding helper: big RSSI readout, peak hold, bearing samples.",
+    },
+    "wxpanel.app": {
+        "id": "wxpanel",
+        "name": "WXPANEL",
+        "notes": "NOAA weather panel: 7 WX channels with per-channel RSSI + auto-strongest.",
+    },
 }
 
 

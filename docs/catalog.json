@@ -29,6 +29,33 @@
       "notes": "FM broadcast radio."
     },
     {
+      "id": "satellite",
+      "name": "SATELLITE",
+      "file": "apps/satellite.app",
+      "size": 25672,
+      "sha256": "e430affeca4525851629dbcbd0fd98600353cab2c80a4ebd0ab08e8b4769bd5e",
+      "segments": 3,
+      "notes": "Satellite pass prediction + tracking (needs satellite table + observer position)."
+    },
+    {
+      "id": "scanqt",
+      "name": "SCANQT",
+      "file": "apps/scanqt.app",
+      "size": 1036,
+      "sha256": "9d101d4ea4b4554384c3f47dc2c71389db6b3d106eced45fe26d2e5bab6697bf",
+      "segments": 1,
+      "notes": "CTCSS/DCS tone hunter on the current channel."
+    },
+    {
+      "id": "search",
+      "name": "SEARCH",
+      "file": "apps/search.app",
+      "size": 2424,
+      "sha256": "ea8cd069ca3c8c1816f1b29a797e77026329f1e74675e19d5854800a5d171e5d",
+      "segments": 1,
+      "notes": "Frequency search / found-frequency list."
+    },
+    {
       "id": "settings",
       "name": "SETTINGS",
       "file": "apps/settings.app",

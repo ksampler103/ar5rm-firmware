@@ -16,6 +16,21 @@ the firmware's by construction.
 | `apps/settings.app` | SETTINGS | 3 — menu (6,392 B), radio (6,752 B), system (6,812 B); segment order menu=0, radio=1, system=2 per `apps/settings/common.rs` | 20,064 B | `56241c25308bfa09abd49fd28b706551cf8fb85d2510324e5bd560d7d3a469a7` | PASS — all checks OK | 6 |
 | `apps/spectrum.app` | SPECTRUM | 1 (image 6,092 B, bss 1,348 B) | 6,200 B | `ff8d85aa9f9fb36512925f59ba4a62e265723928f1a6e1031c66c9d0ea0d9063` | PASS — all checks OK | 7 |
 | `apps/chanmgr.app` | CHANMGR | 1 (image 7,700 B, bss 136 B) | 7,808 B | `2460505575c2bf60c9e7543bd06f8238f1582dc32f00b919ebeee46dd2382f07` | PASS — all checks OK | 2 |
+| `apps/satellite.app` | SATELLITE | 3 — list (6,028 B), predict (11,992 B, oversized), track (7,544 B); segment order list=0, predict=1, track=2 per `apps/satellite/common.rs` | 25,672 B | `e430affeca4525851629dbcbd0fd98600353cab2c80a4ebd0ab08e8b4769bd5e` | PASS — build_hash, size, stack budget (+924 B margin), crc all OK | 3 |
+| `apps/scanqt.app` | SCANQT | 1 (image 928 B, bss 8 B) | 1,036 B | `9d101d4ea4b4554384c3f47dc2c71389db6b3d106eced45fe26d2e5bab6697bf` | PASS — all checks OK | 4 |
+| `apps/search.app` | SEARCH | 1 (image 2,316 B, bss 24 B) | 2,424 B | `ea8cd069ca3c8c1816f1b29a797e77026329f1e74675e19d5854800a5d171e5d` | PASS — all checks OK | 5 |
+
+Phase A build notes (2026-11-24, second run):
+
+- The remaining three upstream apps (`satellite`, `search`, `scanqt`) were
+  built with the identical flow. One gotcha: this box's `toolbin/` was
+  missing `rust-objcopy` — symlinked from the rustup sysroot
+  (`lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-objcopy`).
+- `satellite` needs its satellite table in the app-data region
+  (flash `0x18C000`, written by upstream `tools/push_sat.py`) and an
+  observer position in settings before it can predict passes; the package
+  alone launches to an empty list. Suggested slots above complete upstream
+  `install_all.py`'s default layout (0 is reserved for hello, not built).
 
 Build notes:
 
