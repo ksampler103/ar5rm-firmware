@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:," />
+<title>AR-5RM Web Flasher</title>
+<style>
+  :root{
+    --bg:#0d1011; --panel:#15191b; --panel2:#1a1f22; --line:#2b3236;
+    --text:#dfe5e7; --muted:#9aa6ab; --faint:#6d7a7f;
+    --amber:#e2a63d; --amber-dim:#8a6a2a;
+    --green:#57b87e; --red:#e0654f; --cyan:#5db3c4;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.5;
+    -webkit-text-size-adjust:100%}
+  button,[role="button"],select,summary,input:not([type="checkbox"],[type="radio"]){min-height:2.25rem}
+  .wrap{max-width:880px;margin:0 auto;padding:20px 16px 48px}
+  header.top{border-bottom:2px solid var(--amber-dim);padding-bottom:14px;margin-bottom:6px}
+  header.top h1{font-size:26px;margin:0 0 4px;letter-spacing:.2px;font-weight:700}
+  header.top h1 .accent{color:var(--amber)}
+  .sub{color:var(--muted);font-size:13.5px;max-width:70ch}
+  .support{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:6px 12px;border:1px solid var(--line);
+    border-radius:6px;background:var(--panel);font-size:13px;font-family:var(--mono)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none}
+  .dot.ok{background:var(--green)} .dot.bad{background:var(--red)}
+  .notice{display:none;border:1px solid var(--red);background:#2a1712;color:#f0c9c0;border-radius:8px;
+    padding:12px 14px;margin:14px 0;font-size:14px}
+  .notice.show{display:block}
+  .notice strong{color:#ffb4a2}
+  section.step{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 16px 14px;margin-top:16px}
+  section.step > h2{font-size:16px;margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .stepnum{font-family:var(--mono);font-size:12px;color:#0d1011;background:var(--amber);border-radius:4px;
+    padding:2px 7px;font-weight:700;letter-spacing:.4px}
+  .pill{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);
+    color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .pill.run{color:var(--amber);border-color:var(--amber-dim)}
+  .pill.ok{color:var(--green);border-color:var(--green)}
+  .pill.fail{color:var(--red);border-color:var(--red)}
+  .instr{color:var(--muted);font-size:13.5px;margin:10px 0 0}
+  .instr strong{color:var(--text)}
+  .instr ol,.instr ul{margin:6px 0 0;padding-left:20px}
+  .instr li{margin:3px 0}
+  kbd{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--line);
+    border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:var(--text)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  button{font-family:var(--sans);font-size:14px;font-weight:600;border-radius:7px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);padding:8px 16px;cursor:pointer;min-height:38px}
+  button:hover:not(:disabled){border-color:var(--faint)}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#171106}
+  button.primary:hover:not(:disabled){background:#edb654;border-color:#edb654}
+  button.danger{background:#3a1d16;border-color:#7a3a2a;color:#ffb4a2}
+  button.danger:hover:not(:disabled){border-color:var(--red)}
+  button.flashbtn{background:#5c2318;border-color:#a03c26;color:#ffd9cf;font-size:15px;padding:10px 22px}
+  button.flashbtn.armed{background:var(--red);border-color:var(--red);color:#fff}
+  button:disabled{opacity:.38;cursor:not-allowed}
+  .statusline{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:10px;word-break:break-word}
+  .statusline.ok{color:var(--green)} .statusline.fail{color:var(--red)} .statusline.run{color:var(--amber)}
+  .verdict{font-family:var(--mono);font-size:17px;font-weight:700;letter-spacing:.5px;margin-top:12px;display:none}
+  .verdict.show{display:block}
+  .verdict.ok{color:var(--green)} .verdict.fail{color:var(--red)}
+  .progress{height:10px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;overflow:hidden;margin-top:10px;display:none}
+  .progress.show{display:block}
+  .progress > div{height:100%;width:0%;background:var(--amber);transition:width .15s ease}
+  .filebox{margin-top:12px;border:1px dashed var(--line);border-radius:8px;padding:12px;background:var(--panel2)}
+  input[type="file"]{font-size:13.5px;color:var(--muted);max-width:100%}
+  .filedetails{font-family:var(--mono);font-size:12.5px;margin-top:10px;display:none;word-break:break-all}
+  .filedetails.show{display:block}
+  .filedetails .k{color:var(--faint)}
+  .sha{color:var(--cyan);word-break:break-all}
+  .valmsg{font-family:var(--mono);font-size:12.5px;margin-top:8px;display:none}
+  .valmsg.show{display:block}
+  .valmsg.ok{color:var(--green)} .valmsg.fail{color:var(--red)}
+  label.field{display:block;margin-top:14px;font-size:13.5px;color:var(--muted)}
+  label.field .hint{font-size:12.5px;color:var(--faint)}
+  input[type="text"]{font-family:var(--mono);font-size:15px;background:var(--bg);color:var(--text);
+    border:1px solid var(--line);border-radius:7px;padding:8px 12px;width:220px;max-width:100%;
+    text-transform:lowercase;letter-spacing:1px;margin-top:6px;min-height:40px}
+  input[type="text"]:focus{outline:2px solid var(--amber-dim);outline-offset:1px}
+  .gates{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+  .gates h3{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:0 0 8px;font-weight:700}
+  .gate{display:flex;gap:9px;align-items:baseline;font-size:13.5px;padding:3px 0;color:var(--muted)}
+  .gate .mark{font-family:var(--mono);font-weight:700;width:34px;flex:none}
+  .gate.met{color:var(--text)} .gate.met .mark{color:var(--green)}
+  .gate.unmet .mark{color:var(--red)}
+  .warnbox{border:1px solid #7a3a2a;background:#241310;border-radius:8px;padding:10px 13px;margin-top:12px;
+    font-size:13.5px;color:#f0c9c0}
+  .warnbox strong{color:#ffb4a2}
+  a.dl{display:none;margin-top:10px;font-weight:600;color:var(--amber);text-decoration:none;
+    border:1px solid var(--amber-dim);border-radius:7px;padding:9px 14px;min-height:38px;align-items:center}
+  a.dl.show{display:inline-flex}
+  a.dl:hover{background:#221a0c}
+  /* Log */
+  section.logsec{background:#0a0c0d}
+  .logbox{font-family:var(--mono);font-size:12px;line-height:1.55;background:#060707;border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px;height:300px;overflow-y:auto;margin-top:12px;white-space:pre-wrap;word-break:break-word}
+  .logline .t{color:var(--faint)}
+  .logline.ok .m{color:var(--green)} .logline.err .m{color:var(--red)} .logline.warn .m{color:var(--amber)}
+  .loghex{color:var(--cyan);opacity:.85}
+  label.chk{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);cursor:pointer;
+    padding:6px 4px;min-height:36px}
+  label.chk input{width:18px;height:18px;accent-color:var(--amber)}
+  .small{font-size:12.5px;color:var(--faint)}
+  footer{margin-top:22px;color:var(--faint);font-size:12.5px;border-top:1px solid var(--line);padding-top:12px}
+  /* Modal */
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;align-items:center;justify-content:center;padding:16px}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid #7a3a2a;border-radius:12px;max-width:560px;width:100%;padding:20px}
+  .modal h2{margin:0 0 10px;font-size:18px;color:#ffb4a2}
+  .modal .mono{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .modal p{font-size:14px;color:var(--muted)}
+  .modal p strong{color:var(--text)}
+  @media (max-width:560px){
+    header.top h1{font-size:22px}
+    .wrap{padding:14px 10px 40px}
+    section.step{padding:14px 12px}
+    input[type="text"]{width:100%}
+    .logbox{height:240px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>AR-5RM <span class="accent">Web Flasher</span></h1>
+    <div class="sub">Backup, bootloader probe, and firmware flash for the Baofeng AR-5RM over a USB
+      programming cable — straight from the browser, no scripts to run. Follows the tested
+      <em>radio_read.py → bootloader_probe.py → flash_bf.py</em> sequence, in that order, enforced.</div>
+    <div class="support"><span class="dot" id="supportDot"></span><span id="supportText">Checking Web Serial support…</span></div>
+  </header>
+
+  <div class="notice" id="noSerialNotice">
+    <strong>Web Serial is not available in this browser.</strong>
+    This tool needs <strong>Chrome or Edge on a desktop computer</strong> — Web Serial does not exist in
+    Safari, Firefox, or on phones. Open this page there, plug in the programming cable, and reload.
+    Everything below is disabled until then.
+  </div>
+
+  <!-- STEP 0 -->
+  <section class="step" id="secConnect">
+    <h2><span class="stepnum">STEP 0</span> Connect the cable <span class="pill" id="connPill">not connected</span></h2>
+    <div class="instr">
+      Plug the programming cable into the radio's K-connector (push it in firmly — Baofeng jacks need a
+      hard seat) and into this computer. Then click Connect and pick the cable's serial port from the
+      browser's list. The port runs at <strong>115200 8N1, no flow control</strong> for every operation.
+      Nothing is sent to the radio until you start an operation below.
+    </div>
+    <div class="row">
+      <button class="primary" id="btnConnect">Connect…</button>
+      <button id="btnDisconnect" disabled>Disconnect</button>
+    </div>
+    <div class="statusline" id="connInfo">No port selected.</div>
+  </section>
+
+  <!-- STEP 1 -->
+  <section class="step" id="secBackup">
+    <h2><span class="stepnum">STEP 1</span> Backup — factory memory <span class="pill" id="backupPill">idle</span></h2>
+    <div class="instr">
+      Radio state: <strong>stock firmware, powered ON, sitting at its normal main screen.</strong>
+      This reads the radio's full factory memory image (33,664 bytes) using the stock CPS protocol
+      (<span style="font-family:var(--mono)">PROGRAMBFNORMALU</span>). It is read-only — the tool refuses
+      to send anything except the handshake and read frames. <strong>No backup, no flash:</strong> the
+      flash step stays locked until a backup completes in this session.
+    </div>
+    <div class="row">
+      <button class="primary" id="btnBackup" disabled>Read factory backup</button>
+      <button class="danger" id="btnAbortBackup" disabled>Abort</button>
+      <a class="dl" id="backupDownload" download="factory_memory.img">⬇ Download factory_memory.img (33,664 bytes)</a>
+    </div>
+    <div class="progress" id="backupProgress"><div></div></div>
+    <div class="statusline" id="backupStatus">Waiting. The download link appears here once the full image is read.</div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="step" id="secProbe">
+    <h2><span class="stepnum">STEP 2</span> Probe — bootloader handshake <span class="pill" id="probePill">idle</span></h2>
+    <div class="instr">
+      Put the radio in flash mode first:
+      <ol>
+        <li>Radio <strong>OFF</strong>.</li>
+        <li>Hold <strong>both small side buttons next to PTT</strong> (not PTT itself) and keep holding.</li>
+        <li>Power <strong>ON</strong>. The screen stays <strong>black</strong> — that is flash mode. Release the buttons.</li>
+      </ol>
+      The probe only sends the bootloader handshake frame and listens — <strong>it cannot write anything</strong>.
+      The flash step stays locked until the bootloader answers in this session.
+    </div>
+    <div class="row">
+      <button class="primary" id="btnProbe" disabled>Probe bootloader</button>
+    </div>
+    <div class="verdict" id="probeVerdict"></div>
+    <div class="statusline" id="probeStatus">Waiting. Up to 5 handshake attempts; the first attempt that hears anything decides.</div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="step" id="secFlash">
+    <h2><span class="stepnum">STEP 3</span> Flash — write a .BF package <span class="pill" id="flashPill">locked</span></h2>
+    <div class="instr">
+      Radio state: <strong>still in flash mode</strong> (black screen, from Step 2). Pick the prepared
+      <strong>.BF package</strong> file. The tool mirrors the tested <em>flash_bf.py</em>: single-region
+      packages only, strict header checks, and a SHA-256 prefix gate before the Flash button can arm.
+    </div>
+    <div class="warnbox"><strong>NRF dev unit only.</strong> Flashing is one-way off stock — there is no
+      verified factory image to restore from. <strong>Unit 1 (BK) must stay stock and unflashed</strong>;
+      never run this on it.</div>
+    <div class="filebox">
+      <input type="file" id="fileInput" accept=".bf,.BF" />
+      <div class="filedetails" id="fileDetails"></div>
+      <div class="valmsg" id="fileValMsg"></div>
+    </div>
+    <label class="field" for="shaInput">SHA-256 confirmation
+      <span class="hint">— type the <strong>first 8 hex characters</strong> of the package's SHA-256 shown above.</span><br />
+      <input type="text" id="shaInput" autocomplete="off" autocapitalize="off" spellcheck="false"
+             placeholder="e.g. b04356cb" maxlength="16" disabled />
+    </label>
+    <div class="gates">
+      <h3>Flash gates — all must be satisfied</h3>
+      <div class="gate unmet" id="gateBackup"><span class="mark">[ ]</span><span>Factory backup completed in this session (Step 1)</span></div>
+      <div class="gate unmet" id="gateProbe"><span class="mark">[ ]</span><span>Bootloader answered the probe in this session (Step 2)</span></div>
+      <div class="gate unmet" id="gateFile"><span class="mark">[ ]</span><span>.BF package selected and passed validation</span></div>
+      <div class="gate unmet" id="gateSha"><span class="mark">[ ]</span><span>SHA-256 prefix typed correctly</span></div>
+      <div class="gate unmet" id="gateConn"><span class="mark">[ ]</span><span>Serial port connected (Step 0)</span></div>
+    </div>
+    <div class="row">
+      <button class="flashbtn" id="btnFlash" disabled>Flash firmware</button>
+      <button class="danger" id="btnAbortFlash" disabled>Abort flash</button>
+    </div>
+    <div class="progress" id="flashProgress"><div></div></div>
+    <div class="statusline" id="flashStatus">Locked until every gate above is satisfied. Clicking Flash asks for one final confirmation before anything is written.</div>
+  </section>
+
+  <!-- LOG -->
+  <section class="step logsec" id="secLog">
+    <h2><span class="stepnum">LOG</span> Session log</h2>
+    <div class="row" style="margin-top:10px">
+      <label class="chk"><input type="checkbox" id="chkHex" /> Hex dump (show raw bytes for each exchange)</label>
+      <button id="btnClearLog">Clear</button>
+      <button id="btnDownloadLog">Download log</button>
+    </div>
+    <div class="logbox" id="logBox" aria-live="polite"></div>
+    <div class="small" style="margin-top:8px">Plain-language line for every step; turn on hex to see the exact bytes sent and received.</div>
+  </section>
+
+  <footer>
+    Everything runs in this page, in memory only — no data is stored, sent anywhere, or kept after a
+    reload; reloading resets the backup/probe gates, so a fresh session always starts with a fresh backup.
+    Protocol: stock CPS read at 115200 baud; KDH bootloader frames with CRC16-XMODEM. Package prepared for
+    the first flash: <span style="font-family:var(--mono)">bf5rh-m0.BF</span> — 57,508 bytes,
+    SHA-256 <span style="font-family:var(--mono)">b04356cbeebb91a1aa0b593e5e1414df1fc1a3cc6fae716b1f0c36875c90357e</span>.
+  </footer>
+</div>
+
+<!-- Final confirmation modal -->
+<div class="overlay" id="confirmOverlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="modal">
+    <h2 id="confirmTitle">Final confirmation — write to the radio?</h2>
+    <p>You are about to flash:</p>
+    <p class="mono" id="confirmDetails"></p>
+    <p><strong>NRF dev unit only — Unit 1 (BK) must stay stock.</strong>
+       Confirm the radio on the cable is the NRF spare, in flash mode (black screen).
+       This write is one-way off stock; the bootloader, the backup from Step 1, and a later reflash are the safety nets.</p>
+    <div class="row">
+      <button class="flashbtn armed" id="btnConfirmFlash">Flash the dev unit</button>
+      <button id="btnCancelFlash">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   AR-5RM Web Flasher
+   Protocols implemented from tools/web-flasher/PROTOCOL.md:
+   - Backup: mod radio_read.py (stock CPS, PROGRAMBFNORMALU)
+   - Probe:  mod bootloader_probe.py (KDH handshake only)
+   - Flash:  mod flash_bf.py behaviour (single-region, SHA gate)
+   ============================================================ */
+
+/* ---------- helpers ---------- */
+function $(id){ return document.getElementById(id); }
+function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+function asciiBytes(s){ var a=new Uint8Array(s.length); for(var i=0;i<s.length;i++) a[i]=s.charCodeAt(i)&0xFF; return a; }
+function toHex(bytes){
+  if(!bytes) return "";
+  var parts=[];
+  for(var i=0;i<bytes.length;i++){ var h=bytes[i].toString(16); parts.push(h.length<2?"0"+h:h); }
+  return parts.join(" ");
+}
+function hexByte(b){ var h=b.toString(16); return "0x"+(h.length<2?"0"+h:h); }
+function crc16Xmodem(bytes){
+  var crc=0;
+  for(var i=0;i<bytes.length;i++){
+    crc ^= (bytes[i]<<8);
+    for(var bit=0;bit<8;bit++){
+      crc = (crc & 0x8000) ? ((crc<<1)^0x1021)&0xFFFF : (crc<<1)&0xFFFF;
+    }
+  }
+  return crc;
+}
+function buildFrame(cmd,args,data){
+  data = data || new Uint8Array(0);
+  var len=data.length;
+  var body=new Uint8Array(4+len);
+  body[0]=cmd; body[1]=args; body[2]=(len>>8)&0xFF; body[3]=len&0xFF;
+  body.set(data,4);
+  var crc=crc16Xmodem(body);
+  var frame=new Uint8Array(8+len);
+  frame[0]=0xAA; frame.set(body,1);
+  frame[5+len]=(crc>>8)&0xFF; frame[6+len]=crc&0xFF; frame[7+len]=0xEF;
+  return frame;
+}
+var HANDSHAKE_HEX_EXPECTED="aa0100000a424f4f544c4f4144455252abef";
+function buildHandshake(){
+  var f=buildFrame(0x01,0,asciiBytes("BOOTLOADER"));
+  return f;
+}
+var BOOT_ERRORS={0xE1:"E1 — handshake / command-class error",0xE2:"E2 — sequence-number or length mismatch",
+                 0xE3:"E3 — flash write failed",0xE5:"E5 — unknown command"};
+
+/* ---------- log ---------- */
+var logEntries=[];
+function logMsg(text, kind, hexBytes){
+  var now=new Date();
+  var hh=String(now.getHours()).padStart(2,"0"), mm=String(now.getMinutes()).padStart(2,"0"), ss=String(now.getSeconds()).padStart(2,"0");
+  logEntries.push({t:hh+":"+mm+":"+ss, text:text, kind:kind||"", hex:hexBytes?toHex(hexBytes):null});
+  renderLogLine(logEntries[logEntries.length-1]);
+  var box=$("logBox"); box.scrollTop=box.scrollHeight;
+}
+function renderLogLine(e){
+  var box=$("logBox");
+  var div=document.createElement("div");
+  div.className="logline "+e.kind;
+  var span=document.createElement("span"); span.className="t"; span.textContent="["+e.t+"] ";
+  var msg=document.createElement("span"); msg.className="m"; msg.textContent=e.text;
+  div.appendChild(span); div.appendChild(msg);
+  if(e.hex && $("chkHex").checked){
+    var hx=document.createElement("div"); hx.className="loghex"; hx.textContent="    "+e.hex;
+    div.appendChild(hx);
+  }
+  box.appendChild(div);
+}
+function renderAllLog(){ $("logBox").innerHTML=""; logEntries.forEach(renderLogLine); $("logBox").scrollTop=$("logBox").scrollHeight; }
+
+/* ---------- state ---------- */
+var S={
+  port:null, writer:null, reader:null, readLoopRunning:false,
+  connected:false, running:false, runningOp:null, abort:false,
+  backupDone:false, probeOk:false,
+  file:null, fileValid:false
+};
+
+/* ---------- RX buffer (single background reader fills this) ---------- */
+var rxBuf=[]; var rxHeardTotal=0; var rxWaiters=new Set();
+function rxPush(chunk){
+  rxHeardTotal+=chunk.length;
+  for(var i=0;i<chunk.length;i++) rxBuf.push(chunk[i]);
+  var ws=Array.from(rxWaiters); rxWaiters.clear(); ws.forEach(function(r){ r(); });
+}
+function waitRx(ms){
+  return new Promise(function(res){
+    if(ms<=0){ res(); return; }
+    var done=false;
+    var t=setTimeout(function(){ if(!done){ done=true; rxWaiters.delete(fn); res(); } }, ms);
+    var fn=function(){ if(!done){ done=true; clearTimeout(t); res(); } };
+    rxWaiters.add(fn);
+  });
+}
+function clearRx(){ rxBuf.length=0; }
+async function readLoop(){
+  S.readLoopRunning=true;
+  try{
+    while(S.port && S.port.readable && S.reader){
+      var res=await S.reader.read();
+      if(res.done) break;
+      if(res.value && res.value.length) rxPush(res.value);
+    }
+  }catch(e){ /* reader cancelled on disconnect */ }
+  S.readLoopRunning=false;
+}
+/* Fixed-length read: waits up to firstMs for the first byte, then interMs of
+   silence is a short read (mirrors the 0.25 s per-read slice of radio_read.py). */
+async function readExact(n, firstMs, interMs){
+  var out=[];
+  var startWait=Date.now(); var lastProgress=Date.now();
+  while(out.length<n){
+    if(rxBuf.length){
+      var take=Math.min(n-out.length, rxBuf.length);
+      for(var i=0;i<take;i++) out.push(rxBuf.shift());
+      lastProgress=Date.now();
+      continue;
+    }
+    var limit=(out.length===0)?firstMs:interMs;
+    var base=(out.length===0)?startWait:lastProgress;
+    var remaining=limit-(Date.now()-base);
+    if(remaining<=0) return null;
+    await waitRx(Math.min(remaining,50));
+  }
+  return Uint8Array.from(out);
+}
+/* Bootloader frame reader: hunt 0xAA, parse header, 2.0 s deadline from
+   frame start, verify CRC and footer (footer mismatch = malformed here). */
+async function readFrame(timeoutMs){
+  var start=Date.now(); var heard0=rxHeardTotal;
+  function heard(){ return rxHeardTotal-heard0 + 0; } /* bytes pushed since start; consumed junk also counted via rxHeardTotal */
+  async function take(n){
+    var out=[];
+    while(out.length<n){
+      if(rxBuf.length){
+        var t=Math.min(n-out.length, rxBuf.length);
+        for(var i=0;i<t;i++) out.push(rxBuf.shift());
+        continue;
+      }
+      var rem=timeoutMs-(Date.now()-start);
+      if(rem<=0) return null;
+      await waitRx(Math.min(rem,50));
+    }
+    return out;
+  }
+  var first=null;
+  while(Date.now()-start<timeoutMs){
+    var one=await take(1);
+    if(!one) break;
+    if(one[0]===0xAA){ first=one; break; }
+  }
+  if(!first) return {status:(rxHeardTotal>heard0?"malformed":"timeout"), reason:"no 0xAA header", heard:rxHeardTotal-heard0};
+  var hdr=await take(4);
+  if(!hdr) return {status:"malformed", reason:"truncated header", heard:rxHeardTotal-heard0};
+  var len=(hdr[2]<<8)|hdr[3];
+  var rest=await take(len+3);
+  if(!rest) return {status:"malformed", reason:"truncated frame", heard:rxHeardTotal-heard0};
+  var data=rest.slice(0,len);
+  var crcRx=(rest[len]<<8)|rest[len+1];
+  var footer=rest[len+2];
+  var body=new Uint8Array(4+len);
+  body.set(hdr,0); body.set(data,4);
+  var crcCalc=crc16Xmodem(body);
+  var raw=new Uint8Array(8+len); raw[0]=0xAA; raw.set(hdr,1); raw.set(rest,5);
+  if(footer!==0xEF) return {status:"malformed", reason:"bad footer "+hexByte(footer), heard:rxHeardTotal-heard0, raw:raw, cmd:hdr[0], args:hdr[1], data:data};
+  if(crcCalc!==crcRx) return {status:"malformed", reason:"CRC mismatch", heard:rxHeardTotal-heard0, raw:raw, cmd:hdr[0], args:hdr[1], data:data};
+  return {status:"frame", cmd:hdr[0], args:hdr[1], data:Uint8Array.from(data), heard:rxHeardTotal-heard0, raw:raw};
+}
+async function writeBytes(bytes){
+  await S.writer.write(bytes);
+}
+
+/* ---------- UI state management ---------- */
+function setPill(el, text, cls){ el.textContent=text; el.className="pill"+(cls?" "+cls:""); }
+function setRunning(op){
+  S.running=!!op; S.runningOp=op; S.abort=false;
+  refreshControls();
+}
+function refreshControls(){
+  var dis=!S.connected || S.running || !serialSupported;
+  $("btnBackup").disabled=dis;
+  $("btnProbe").disabled=dis;
+  $("btnDisconnect").disabled=!S.connected || S.running || !serialSupported;
+  $("btnConnect").disabled=S.connected || S.running || !serialSupported;
+  $("btnAbortBackup").disabled=!(S.running && S.runningOp==="backup");
+  $("btnAbortFlash").disabled=!(S.running && S.runningOp==="flash");
+  $("fileInput").disabled=S.running || !serialSupported;
+  $("shaInput").disabled=!S.file || S.running || !serialSupported;
+  updateGates();
+}
+function setGate(el, met){
+  el.className="gate "+(met?"met":"unmet");
+  el.querySelector(".mark").textContent=met?"[OK]":"[ ]";
+}
+function shaMatches(){
+  if(!S.file || !S.file.sha) return false;
+  var v=$("shaInput").value.trim().toLowerCase();
+  return v.length>=8 && S.file.sha.toLowerCase().indexOf(v)===0 && v===S.file.sha.toLowerCase().slice(0,8);
+}
+function allGatesMet(){
+  return S.backupDone && S.probeOk && S.fileValid && shaMatches();
+}
+function updateGates(){
+  setGate($("gateBackup"), S.backupDone);
+  setGate($("gateProbe"), S.probeOk);
+  setGate($("gateFile"), S.fileValid);
+  setGate($("gateSha"), shaMatches());
+  setGate($("gateConn"), S.connected);
+  var armed=allGatesMet() && S.connected && !S.running;
+  var fb=$("btnFlash");
+  fb.disabled=!armed;
+  fb.className="flashbtn"+(armed?" armed":"");
+  if(S.runningOp!=="flash"){
+    if(allGatesMet() && S.connected) setPill($("flashPill"),"armed — ready","run");
+    else if(S.fileValid) setPill($("flashPill"),"locked — gates missing","");
+    else setPill($("flashPill"),"locked","");
+  }
+}
+
+/* ---------- Step 0: connect / disconnect ---------- */
+var serialSupported=("serial" in navigator);
+async function doConnect(){
+  try{
+    logMsg("Requesting serial port — pick the programming cable in the browser dialog…");
+    S.port=await navigator.serial.requestPort();
+    await S.port.open({baudRate:115200, dataBits:8, parity:"none", stopBits:1, flowControl:"none"});
+    S.writer=S.port.writable.getWriter();
+    S.reader=S.port.readable.getReader();
+    S.connected=true;
+    readLoop();
+    var info=(S.port.getInfo)?S.port.getInfo():{};
+    var desc="Connected at 115200 8N1, flow control off.";
+    if(info && (info.usbVendorId!==undefined)){
+      desc+=" USB vendor 0x"+info.usbVendorId.toString(16).padStart(4,"0")+
+            " / product 0x"+info.productId.toString(16).padStart(4,"0")+".";
+    }
+    $("connInfo").textContent=desc;
+    $("connInfo").className="statusline ok";
+    setPill($("connPill"),"connected","ok");
+    logMsg("Port open: 115200 baud, 8 data bits, no parity, 1 stop bit, no flow control. Nothing sent yet.","ok");
+    refreshControls();
+  }catch(e){
+    if(e && e.name==="NotFoundError"){ logMsg("Port selection cancelled — nothing connected.","warn"); }
+    else { logMsg("Connect failed: "+(e.message||e),"err"); }
+    S.port=null; S.connected=false; refreshControls();
+  }
+}
+async function doDisconnect(){
+  try{
+    if(S.reader){ try{ await S.reader.cancel(); }catch(e){} try{ S.reader.releaseLock(); }catch(e){} S.reader=null; }
+    if(S.writer){ try{ S.writer.releaseLock(); }catch(e){} S.writer=null; }
+    if(S.port){ try{ await S.port.close(); }catch(e){} S.port=null; }
+  }finally{
+    S.connected=false; clearRx();
+    $("connInfo").textContent="Disconnected. Backup/probe gates from this session are kept; reconnect to continue.";
+    $("connInfo").className="statusline";
+    setPill($("connPill"),"not connected","");
+    logMsg("Port closed.","warn");
+    refreshControls();
+  }
+}
+if(serialSupported && navigator.serial.addEventListener){
+  navigator.serial.addEventListener("disconnect", function(ev){
+    if(S.port && ev.target===S.port && S.connected){
+      S.connected=false; setPill($("connPill"),"cable unplugged","fail");
+      $("connInfo").textContent="Cable was unplugged. Reconnect (Step 0) to continue.";
+      $("connInfo").className="statusline fail";
+      logMsg("Serial device disconnected (cable unplugged).","err");
+      refreshControls();
+    }
+  });
+}
+
+/* ---------- Step 1: backup (stock CPS protocol, radio_read.py) ---------- */
+var BACKUP_REGIONS=[[0x0000,0x8040],[0x9000,0x0040],[0xA000,0x02C0],[0xD000,0x0040]];
+var BACKUP_TOTAL=33664, BACKUP_BLOCKS=526;
+var CRYPT_KEY=[0x43,0x4F,0x20,0x37]; /* ASCII "CO 7" */
+function cryptBlock(data){
+  var out=new Uint8Array(data.length);
+  for(var i=0;i<data.length;i++){
+    var b=data[i], k=CRYPT_KEY[i%4];
+    if(k!==0x20 && b!==0x00 && b!==0xFF && b!==k && b!==(k^0xFF)) out[i]=b^k; else out[i]=b;
+  }
+  return out;
+}
+async function doBackup(){
+  setRunning("backup");
+  setPill($("backupPill"),"running","run");
+  var st=$("backupStatus"); st.className="statusline run";
+  var bar=$("backupProgress"); bar.className="progress show"; bar.firstElementChild.style.width="0%";
+  $("backupDownload").className="dl";
+  try{
+    clearRx(); await sleep(10);
+    logMsg("Backup: sending ident PROGRAMBFNORMALU (radio must be stock, on, at its main screen).");
+    var ident=asciiBytes("PROGRAMBFNORMALU");
+    await writeBytes(ident);
+    var ack=await readExact(1,1500,250);
+    if(!ack) throw new Error("No response from the radio. Check the cable is pushed in hard, the radio is ON at its main screen, and you picked the right port.");
+    logMsg("Backup: ident reply received.", "", ack);
+    if(ack[0]!==0x06) throw new Error("Radio did not acknowledge the ident (expected 0x06, got "+hexByte(ack[0])+"). Is the radio stock and at its main screen?");
+    logMsg("Backup: radio acknowledged (0x06).","ok");
+
+    var magics=[
+      {send:Uint8Array.from([0x46]), read:16, label:"magic 1 ('F')"},
+      {send:Uint8Array.from([0x4D]), read:15, label:"magic 2 ('M')"},
+      {send:Uint8Array.from([0x53,0x45,0x4E,0x44,0x21,0x05,0x0D,0x01,0x01,0x01,0x04,0x11,0x08,0x05,0x0D,0x0D,0x01,0x11,0x0F,0x09,0x12,0x09,0x10,0x04,0x00]), read:1, label:"magic 3 ('SEND!' block)"}
+    ];
+    for(var m=0;m<magics.length;m++){
+      await writeBytes(magics[m].send);
+      var resp=await readExact(magics[m].read,1500,250);
+      if(!resp) throw new Error("Short read during "+magics[m].label+" — backup aborted. Nothing was written to the radio.");
+      logMsg("Backup: "+magics[m].label+" — read "+resp.length+" bytes (not validated, per protocol).","",resp);
+    }
+
+    var image=new Uint8Array(BACKUP_TOTAL);
+    var offset=0, blockIdx=0;
+    for(var r=0;r<BACKUP_REGIONS.length;r++){
+      var start=BACKUP_REGIONS[r][0], size=BACKUP_REGIONS[r][1];
+      for(var off=0; off<size; off+=0x40){
+        if(S.abort) throw new Error("Backup aborted by operator at block "+blockIdx+" of "+BACKUP_BLOCKS+". No complete image was saved; the radio was not written to.");
+        var addr=start+off;
+        var req=Uint8Array.from([0x52,(addr>>8)&0xFF,addr&0xFF,0x40]);
+        await writeBytes(req);
+        var blk=await readExact(68,1500,250);
+        if(!blk) throw new Error("Short read at address 0x"+addr.toString(16).padStart(4,"0")+" (block "+(blockIdx+1)+" of "+BACKUP_BLOCKS+") — backup aborted. This protocol has no retries; check the cable and run the backup again.");
+        var dec=cryptBlock(blk.slice(4,68));
+        image.set(dec, offset); offset+=64; blockIdx++;
+        if(blockIdx%8===0 || blockIdx===BACKUP_BLOCKS){
+          bar.firstElementChild.style.width=Math.round(blockIdx/BACKUP_BLOCKS*100)+"%";
+          st.textContent="Reading factory memory — block "+blockIdx+" of "+BACKUP_BLOCKS+" ("+offset+" bytes)…";
+          await sleep(0);
+        }
+      }
+    }
+    if(offset!==BACKUP_TOTAL) throw new Error("Backup size mismatch: got "+offset+" bytes, expected "+BACKUP_TOTAL+". Treating as failed.");
+    var blob=new Blob([image],{type:"application/octet-stream"});
+    var url=URL.createObjectURL(blob);
+    var dl=$("backupDownload"); dl.href=url; dl.className="dl show";
+    S.backupDone=true;
+    setPill($("backupPill"),"complete","ok");
+    st.textContent="Backup complete: 33,664 bytes read and decrypted. Download factory_memory.img and keep it safe — it is the only record of this unit's factory config.";
+    st.className="statusline ok";
+    logMsg("Backup complete: 33,664 bytes → factory_memory.img. Gate 1 satisfied: backup done.","ok");
+  }catch(e){
+    setPill($("backupPill"),"failed","fail");
+    st.textContent="Backup failed: "+e.message; st.className="statusline fail";
+    logMsg("Backup failed: "+e.message,"err");
+  }finally{
+    setRunning(null); refreshControls();
+  }
+}
+
+/* ---------- Step 2: probe (bootloader_probe.py) ---------- */
+async function doProbe(){
+  setRunning("probe");
+  setPill($("probePill"),"running","run");
+  var st=$("probeStatus"); st.className="statusline run"; st.textContent="Probing…";
+  var verdict=$("probeVerdict"); verdict.className="verdict"; verdict.textContent="";
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    logMsg("Probe: DTR + RTS asserted. Idle-listening 1.0 s for anything the radio sends unprompted…");
+    clearRx(); await sleep(1000);
+    var idle=rxBuf.splice(0, rxBuf.length);
+    if(idle.length) logMsg("Probe: heard "+idle.length+" byte(s) before sending anything.","warn",Uint8Array.from(idle));
+    else logMsg("Probe: heard nothing during the idle listen (normal).");
+    var hs=buildHandshake();
+    var hsHex=toHex(hs).replace(/ /g,"");
+    if(hsHex!==HANDSHAKE_HEX_EXPECTED) throw new Error("Internal error: handshake frame does not match the spec ("+hsHex+"). Refusing to send.");
+    var outcome=null; /* 'answered' | 'refused' | 'none' */
+    for(var attempt=1; attempt<=5; attempt++){
+      clearRx();
+      logMsg("Probe: handshake attempt "+attempt+" of 5 — sending BOOTLOADER frame.","",hs);
+      await writeBytes(hs);
+      var r=await readFrame(2000);
+      if(r.status==="frame"){
+        logMsg("Probe: reply frame received (cmd "+hexByte(r.cmd)+", args "+hexByte(r.args)+").","",r.raw);
+        outcome=(r.args===0x06)?"answered":"refused";
+        break;
+      }
+      if(r.heard>0){
+        logMsg("Probe: heard "+r.heard+" byte(s) but no valid frame ("+r.reason+"). Stopping — the first attempt that hears anything decides.","warn",r.raw);
+        outcome="none"; break;
+      }
+      logMsg("Probe: silence on attempt "+attempt+".","warn");
+      outcome="none";
+    }
+    if(outcome==="answered"){
+      S.probeOk=true;
+      verdict.textContent="BOOTLOADER ANSWERED"; verdict.className="verdict show ok";
+      setPill($("probePill"),"answered","ok");
+      st.textContent="Handshake ACKed (args 0x06, CRC valid, footer 0xEF). Gate 2 satisfied. Leave the radio in flash mode for Step 3.";
+      st.className="statusline ok";
+      logMsg("BOOTLOADER ANSWERED — probe gate satisfied.","ok");
+    }else if(outcome==="refused"){
+      verdict.textContent="BOOTLOADER REFUSED THE HANDSHAKE"; verdict.className="verdict show fail";
+      setPill($("probePill"),"refused","fail");
+      st.textContent="A CRC-valid frame came back but args was not 0x06 (ACK). The flash gate stays locked.";
+      st.className="statusline fail";
+      logMsg("BOOTLOADER REFUSED THE HANDSHAKE.","err");
+    }else{
+      verdict.textContent="NO BOOTLOADER RESPONSE"; verdict.className="verdict show fail";
+      setPill($("probePill"),"no response","fail");
+      st.textContent="No valid bootloader frame. Stop and check: is the radio really in flash mode (black screen, both side buttons held at power-on)? Is the cable seated hard? Do not attempt a flash on a silent bootloader.";
+      st.className="statusline fail";
+      logMsg("NO BOOTLOADER RESPONSE.","err");
+    }
+  }catch(e){
+    setPill($("probePill"),"failed","fail");
+    st.textContent="Probe failed: "+e.message; st.className="statusline fail";
+    logMsg("Probe failed: "+e.message,"err");
+  }finally{
+    setRunning(null); refreshControls();
+  }
+}
+
+/* ---------- Step 3: flash (flash_bf.py behaviour) ---------- */
+async function sendCmd(cmd,args,data,opts){
+  opts=opts||{};
+  var attempts=opts.attempts||5;
+  var tolerateSilence=!!opts.tolerateSilence;
+  var frame=buildFrame(cmd,args,data);
+  var everHeard=false;
+  for(var a=1;a<=attempts;a++){
+    if(S.abort) throw new Error("__ABORT__");
+    clearRx();
+    await writeBytes(frame);
+    var r=await readFrame(2000);
+    if(r.heard>0) everHeard=true;
+    if(r.status==="frame"){
+      if(r.args===0x06) return {ack:true, silence:false};
+      var code=r.cmd;
+      if(code===0xE2){
+        logMsg("Command "+hexByte(cmd)+": bootloader replied "+BOOT_ERRORS[0xE2]+" — retrying (attempt "+a+" of "+attempts+").","warn",r.raw);
+        continue;
+      }
+      if(BOOT_ERRORS[code]) throw new Error("Bootloader denied command "+hexByte(cmd)+": "+BOOT_ERRORS[code]+". Flash aborted.");
+      throw new Error("Bootloader refused command "+hexByte(cmd)+" (reply cmd "+hexByte(r.cmd)+", args "+hexByte(r.args)+"). Flash aborted.");
+    }
+    logMsg("Command "+hexByte(cmd)+": "+(r.status==="timeout"?"no reply":"malformed reply ("+r.reason+")")+" — attempt "+a+" of "+attempts+(a<attempts?", retrying.":"."),"warn",r.raw);
+  }
+  if(tolerateSilence && !everHeard) return {ack:true, silence:true};
+  throw new Error("Command "+hexByte(cmd)+" got no ACK after "+attempts+" attempts. Flash aborted.");
+}
+async function doFlash(){
+  var f=S.file;
+  setRunning("flash");
+  setPill($("flashPill"),"flashing","run");
+  var st=$("flashStatus"); st.className="statusline run";
+  var bar=$("flashProgress"); bar.className="progress show"; bar.firstElementChild.style.width="0%";
+  try{
+    await S.port.setSignals({dataTerminalReady:true, requestToSend:true});
+    logMsg("Flash: DTR + RTS asserted. Starting handshake…");
+    await sendCmd(0x01,0,asciiBytes("BOOTLOADER"));
+    logMsg("Flash: handshake ACKed.","ok");
+    var pkgs=Math.ceil(f.lenFw/1024);
+    logMsg("Flash: declaring region 1 — "+pkgs+" package(s) of 1024 bytes.");
+    await sendCmd(0x04,0,Uint8Array.from([pkgs]));
+    logMsg("Flash: package count accepted. Sending packages…","ok");
+    for(var seq=0; seq<pkgs; seq++){
+      if(S.abort) throw new Error("__ABORT__");
+      var chunk=new Uint8Array(1024);
+      var slice=f.payload.slice(seq*1024, Math.min((seq+1)*1024, f.lenFw));
+      chunk.set(slice,0); /* final package zero-padded to 1024 */
+      await sendCmd(0x03, seq&0xFF, chunk);
+      bar.firstElementChild.style.width=Math.round((seq+1)/pkgs*100)+"%";
+      st.textContent="Flashing — package "+(seq+1)+" of "+pkgs+" ACKed.";
+      if(seq%10===0 || seq===pkgs-1) logMsg("Flash: package "+(seq+1)+" of "+pkgs+" ACKed.");
+    }
+    logMsg("Flash: all "+pkgs+" packages ACKed. Sending end command…");
+    var end=await sendCmd(0x45,0,new Uint8Array(0),{attempts:2, tolerateSilence:true});
+    if(end.silence) logMsg("Flash: no reply to the end command and nothing was ever heard back — radio likely rebooted. Treating as success, per the tested flasher's behaviour.","warn");
+    setPill($("flashPill"),"complete","ok");
+    st.textContent="Flash complete. Power the radio on normally and check, in order: (1) display — legible UI, garbage, or black; (2) keypad — right keys in the right places; (3) backlight / LEDs; (4) RF last — catalog RX/TX separately.";
+    st.className="statusline ok";
+    logMsg("FLASH COMPLETE. Power on normally and report display → keypad → backlight/LEDs → RF, in that order.","ok");
+  }catch(e){
+    if(e.message==="__ABORT__" || S.abort){
+      setPill($("flashPill"),"aborted","fail");
+      st.textContent="Flash ABORTED between packages. The radio is partially flashed and will need a full reflash before it can be used — do not judge it in this state. Re-run the probe, then flash again from the start.";
+      st.className="statusline fail";
+      logMsg("Flash aborted by operator between packages — radio is PARTIALLY FLASHED and needs a reflash.","err");
+    }else{
+      setPill($("flashPill"),"failed","fail");
+      st.textContent="Flash failed: "+e.message+" If some packages were already written, the radio is partially flashed and needs a full reflash.";
+      st.className="statusline fail";
+      logMsg("Flash failed: "+e.message,"err");
+    }
+  }finally{
+    setRunning(null); refreshControls();
+  }
+}
+
+/* ---------- .BF file handling & validation (flash_bf.py asserts) ---------- */
+function u32be(b,off){ return ((b[off]<<24)>>>0) + (b[off+1]<<16) + (b[off+2]<<8) + b[off+3]; }
+async function onFileChosen(){
+  var input=$("fileInput");
+  var det=$("fileDetails"), vm=$("fileValMsg");
+  det.className="filedetails"; det.innerHTML=""; vm.className="valmsg"; vm.textContent="";
+  S.file=null; S.fileValid=false; $("shaInput").value="";
+  if(!input.files || !input.files.length){ refreshControls(); return; }
+  var file=input.files[0];
+  var buf=new Uint8Array(await file.arrayBuffer());
+  var problems=[];
+  var lenFw=null, cntPart=null, lenData=null, pkgs=null;
+  if(buf.length<16) problems.push("File is only "+buf.length+" bytes — a .BF package needs at least a 16-byte header.");
+  if(problems.length===0){
+    cntPart=buf[0]; lenFw=u32be(buf,1); lenData=u32be(buf,5);
+    if(cntPart===2) problems.push("Two-region packages not supported by this tool (header cntPart = 2). This tool mirrors flash_bf.py: single-region only.");
+    else if(cntPart!==1) problems.push("Header region count (cntPart) is "+cntPart+" — expected 1.");
+    if(lenData!==0) problems.push("Header lenData is "+lenData+" — expected 0 for a single-region package.");
+    if(buf.length!==16+lenFw) problems.push("File length "+buf.length+" does not equal 16 + lenFw ("+(16+lenFw)+"). The package is truncated or has trailing data.");
+    if(!(lenFw>0 && lenFw<=0xF000)) problems.push("lenFw "+lenFw+" is outside the bootloader's region-1 limit (1…61,440 bytes). Oversize is rejected by the bootloader with E2.");
+    if(problems.length===0){
+      var payload=buf.slice(16);
+      if(payload[3]!==0x20 || payload[7]!==0x08)
+        problems.push("Vector-table sanity check failed: payload[3] = "+hexByte(payload[3])+" (expected 0x20), payload[7] = "+hexByte(payload[7])+" (expected 0x08). This does not look like an AT32 application image for this radio.");
+    }
+  }
+  var shaHex="";
+  try{
+    var digest=await crypto.subtle.digest("SHA-256", buf);
+    var d=new Uint8Array(digest);
+    shaHex=toHex(d).replace(/ /g,"");
+  }catch(e){ problems.push("Could not compute SHA-256 ("+e.message+")."); }
+  pkgs=(lenFw!==null)?Math.ceil(lenFw/1024):null;
+  S.file={name:file.name, size:buf.length, bytes:buf, lenFw:lenFw, payload:(lenFw!==null && buf.length>=16)?buf.slice(16):null, sha:shaHex};
+  det.innerHTML=
+    "<span class='k'>File:</span> "+escapeHtml(file.name)+"<br/>"+
+    "<span class='k'>Size:</span> "+buf.length+" bytes &nbsp; <span class='k'>Header:</span> cntPart "+cntPart+", lenFw "+lenFw+", lenData "+lenData+"<br/>"+
+    "<span class='k'>Packages:</span> "+pkgs+" × 1024 bytes (final package zero-padded on the wire)<br/>"+
+    "<span class='k'>SHA-256:</span> <span class='sha'>"+shaHex+"</span>";
+  det.className="filedetails show";
+  if(problems.length===0){
+    S.fileValid=true;
+    vm.textContent="Validation passed — all flash_bf.py pre-flight checks OK. Type the first 8 hex characters of the SHA-256 above to satisfy the last file gate.";
+    vm.className="valmsg show ok";
+    logMsg("Package loaded: "+file.name+" ("+buf.length+" bytes, lenFw "+lenFw+", "+pkgs+" packages). Validation passed. SHA-256 "+shaHex,"ok");
+  }else{
+    S.fileValid=false;
+    vm.textContent="Validation FAILED: "+problems.join(" ");
+    vm.className="valmsg show fail";
+    logMsg("Package rejected: "+problems.join(" "),"err");
+  }
+  refreshControls();
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+/* ---------- final confirmation modal ---------- */
+function openConfirm(){
+  var f=S.file; if(!f) return;
+  $("confirmDetails").textContent=
+    "File: "+f.name+"\nSize: "+f.size+" bytes (firmware payload "+f.lenFw+" bytes, "+Math.ceil(f.lenFw/1024)+" packages)\nSHA-256: "+f.sha;
+  $("confirmOverlay").className="overlay show";
+}
+function closeConfirm(){ $("confirmOverlay").className="overlay"; }
+
+/* ---------- wiring ---------- */
+$("btnConnect").addEventListener("click", doConnect);
+$("btnDisconnect").addEventListener("click", doDisconnect);
+$("btnBackup").addEventListener("click", doBackup);
+$("btnProbe").addEventListener("click", doProbe);
+$("btnAbortBackup").addEventListener("click", function(){ S.abort=true; logMsg("Abort requested — the backup stops after the current block read.","warn"); });
+$("btnAbortFlash").addEventListener("click", function(){ S.abort=true; logMsg("Abort requested — the flash stops between packages. A partially flashed radio will need a full reflash.","warn"); });
+$("fileInput").addEventListener("change", onFileChosen);
+$("shaInput").addEventListener("input", updateGates);
+$("btnFlash").addEventListener("click", openConfirm);
+$("btnCancelFlash").addEventListener("click", closeConfirm);
+$("btnConfirmFlash").addEventListener("click", function(){ closeConfirm(); if(allGatesMet() && S.connected && !S.running) doFlash(); });
+$("chkHex").addEventListener("change", renderAllLog);
+$("btnClearLog").addEventListener("click", function(){ logEntries=[]; $("logBox").innerHTML=""; });
+$("btnDownloadLog").addEventListener("click", function(){
+  var text=logEntries.map(function(e){ return "["+e.t+"] "+e.text+(e.hex?"\n    "+e.hex:""); }).join("\n");
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"}));
+  a.download="ar5rm-flasher-log.txt"; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+});
+
+/* ---------- init ---------- */
+(function init(){
+  if(serialSupported){
+    $("supportDot").className="dot ok";
+    $("supportText").textContent="Web Serial available — Chrome/Edge desktop. Ready.";
+    logMsg("AR-5RM Web Flasher ready. Nothing runs automatically — connect the cable (Step 0) to begin.");
+    logMsg("Reminder: NRF dev unit only. Unit 1 (BK) stays stock and unflashed.","warn");
+  }else{
+    $("supportDot").className="dot bad";
+    $("supportText").textContent="Web Serial NOT available in this browser.";
+    $("noSerialNotice").className="notice show";
+    var controls=document.querySelectorAll("button, input");
+    controls.forEach(function(c){ if(c.id!=="btnClearLog" && c.id!=="btnDownloadLog" && c.id!=="chkHex") c.disabled=true; });
+    logMsg("Web Serial is not available here — use Chrome or Edge on a desktop computer. All radio operations are disabled.","err");
+  }
+  refreshControls();
+  if(!serialSupported){
+    var controls2=document.querySelectorAll("button, input");
+    controls2.forEach(function(c){ if(c.id!=="btnClearLog" && c.id!=="btnDownloadLog" && c.id!=="chkHex") c.disabled=true; });
+  }
+})();
+</script>
+</body>
+</html>
