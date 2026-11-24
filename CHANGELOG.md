@@ -3,6 +3,36 @@
 Firmware versions for the AR-5RM custom firmware (bf-5rh fork). Scheme:
 see `VERSIONING.md`. Newest first. All dates 2026-11-24 unless noted.
 
+## v1.0.1 — Fork 1 fixes: separators + Clean Modern palette
+
+Patch release (fork commit 90a452d). Two cosmetic defects found by
+the core-UI simulator's pre-flash renders of v1.0.0, both fixed and
+verified by re-rendering from the fixed sources:
+
+- **`·` separators rendered as `?`.** `standby.rs` used U+00B7
+  middle dots in 5 places (Clean Modern info line, card title and
+  lock hint; Data Dense status line); the embedded-graphics ASCII
+  fonts have no such glyph, so the radio would have shown `?`.
+  Replaced with ASCII `|` (`GMRS 20 | MAIN`,
+  `WATCH B | DW ON | PS OFF`). A scan of every string literal in
+  the fork's `src/` confirms no non-ASCII literals remain.
+- **Clean Modern palette muted to the approved mockup.** v1.0.0
+  shipped a saturated royal blue (dominant panel (24,48,156));
+  Preston chose the mockup's muted desaturated slate. Retuned
+  from pixel samples of `concept2-clean-modern.png`: panel →
+  (24,44,57) vs mockup (23,44,60), bg → (16,24,33) vs (16,24,32),
+  dim → (140,166,181) vs (140,165,185). Accent already matched
+  the mockup (66,203,255) vs (64,200,255) and is unchanged, as
+  are the semantic colours (amber/green/alert roles kept).
+  Geometry and the other three palettes are untouched.
+
+Sizes (raw .bin → .BF): APX Pro 57,088 → 57,104 B; Clean Modern
+57,140 → 57,156 B; Data Dense 56,912 → 56,928 B; Minimal Dark
+54,280 → 54,296 B. All fit the 61,440 B limit. **BUILD_HASH
+unchanged at `0xDEC616E9`** — no ABI change; all 11 catalog apps
+pass `check_app` and remain valid on every variant. Not yet
+flashed to hardware.
+
 ## v1.0.0 — Fork 1: slimmed core + theme variants
 
 First release of our fork of upstream bf-5rh (base commit e52b236).

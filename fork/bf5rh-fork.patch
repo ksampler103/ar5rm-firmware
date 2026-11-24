@@ -70,7 +70,7 @@ index cc8f7cd..5fbe727 100644
      }
  }
 diff --git a/src/ui/standby.rs b/src/ui/standby.rs
-index 726a3e1..df51026 100644
+index 726a3e1..88f3618 100644
 --- a/src/ui/standby.rs
 +++ b/src/ui/standby.rs
 @@ -1,3 +1,15 @@
@@ -1461,7 +1461,7 @@ index 726a3e1..df51026 100644
 +            write!(out, ".{}", tenth).ok();
 +        }
 +    }
-+    out.write_str(" · ").ok();
++    out.write_str(" | ").ok();
 +    match app.side_subaudio_tx(i) {
 +        SubAudio::Ctcss(t) => {
 +            write!(out, "T{}.{}", t / 10, t % 10).ok();
@@ -1473,7 +1473,7 @@ index 726a3e1..df51026 100644
 +            out.write_str("No tone").ok();
 +        }
 +    }
-+    out.write_str(" · ").ok();
++    out.write_str(" | ").ok();
 +    out.write_str(match app.side_power(i) {
 +        Power::Low => "Low",
 +        Power::Mid => "Mid",
@@ -1528,7 +1528,7 @@ index 726a3e1..df51026 100644
 +    })
 +    .ok();
 +    if snap.key_locked {
-+        hint.write_str(" · Locked").ok();
++        hint.write_str(" | Locked").ok();
 +    }
 +    text(lcd, hint.as_str(), &FONT_5X8, 4, 120, pal.dim);
 +
@@ -1557,7 +1557,7 @@ index 726a3e1..df51026 100644
 +    } else {
 +        let mut label: TextBuf<24> = TextBuf::new();
 +        side_label(app, i, &mut label);
-+        label.write_str(" · MAIN").ok();
++        label.write_str(" | MAIN").ok();
 +        text(lcd, label.as_str(), &FONT_6X10, x, label_base, pal.accent);
 +    }
 +
@@ -1996,7 +1996,7 @@ index 726a3e1..df51026 100644
 +            let mut line: TextBuf<32> = TextBuf::new();
 +            write!(
 +                line,
-+                "WATCH {} · DW {} · PS {}",
++                "WATCH {} | DW {} | PS {}",
 +                if app.watching_index() == 0 { "A" } else { "B" },
 +                if st.dual_standby { "ON" } else { "OFF" },
 +                if st.power_save { "ON" } else { "OFF" },
@@ -2162,10 +2162,10 @@ index 726a3e1..df51026 100644
  }
 diff --git a/src/ui/theme.rs b/src/ui/theme.rs
 new file mode 100644
-index 0000000..676b410
+index 0000000..fa19db1
 --- /dev/null
 +++ b/src/ui/theme.rs
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,144 @@
 +//! Standby themes (fork feature — see `fork/FORK.md` in the
 +//! ar5rm-firmware repo).
 +//!
@@ -2252,15 +2252,22 @@ index 0000000..676b410
 +pub fn palette(id: u8) -> Palette {
 +    match id {
 +        THEME_CLEAN => Palette {
-+            bg: rgb(1, 6, 10),
-+            panel: rgb(3, 12, 19),
-+            fg: rgb(30, 62, 30),
-+            slave: rgb(17, 32, 24),
++            // Muted desaturated slate, sampled from the approved
++            // mockup (concept2-clean-modern.png): bg (16,24,32),
++            // panel (23,44,60), dim text (140,165,185) in 8-bit
++            // terms. v1.0.0 shipped a saturated royal-blue panel
++            // (24,48,156); retuned 2026-11-24 per Preston. Accent
++            // already matched the mockup (64,200,255) and the
++            // semantic colours (amber/alert) are unchanged.
++            bg: rgb(2, 6, 4),
++            panel: rgb(3, 11, 7),
++            fg: rgb(30, 61, 30),
++            slave: rgb(21, 47, 25),
 +            accent: rgb(8, 50, 31),
-+            dim: rgb(10, 21, 25),
-+            hair: rgb(4, 10, 14),
++            dim: rgb(17, 41, 22),
++            hair: rgb(3, 9, 6),
 +            amber: rgb(31, 50, 0),
-+            green: rgb(10, 57, 17),
++            green: rgb(11, 51, 15),
 +            alert: rgb(31, 8, 4),
 +        },
 +        THEME_DENSE => Palette {

@@ -4,8 +4,8 @@
       "id": "bf5rh-fork1-apx",
       "name": "Fork 1 \u2014 APX Pro theme",
       "file": "firmware/bf5rh-fork1-apx.BF",
-      "size": 57108,
-      "sha256": "3edf67505ce2c6d44202f715266755c1526614626101462f2f125158d87a63ad",
+      "size": 57104,
+      "sha256": "bc37e263fee49f5fd51d7115d42ee956af8ff14fe94295b0c75201bb35c8ddc4",
       "notes": "bf-5rh + slimmed core with the APX Pro standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
       "preview": "themeimg/fork1-apx.png"
     },
@@ -13,8 +13,8 @@
       "id": "bf5rh-fork1-clean",
       "name": "Fork 1 \u2014 Clean Modern theme",
       "file": "firmware/bf5rh-fork1-clean.BF",
-      "size": 57176,
-      "sha256": "cf329090449b556bb836b4e1de9bc8b1390817116317711a49e991f21e73f13a",
+      "size": 57156,
+      "sha256": "666b18b84b87415801d3bb2e1d22fd50accd6d6bd027543dd5ed2fcbae0b92ca",
       "notes": "bf-5rh + slimmed core with the Clean Modern standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
       "preview": "themeimg/fork1-clean.png"
     },
@@ -22,8 +22,8 @@
       "id": "bf5rh-fork1-dense",
       "name": "Fork 1 \u2014 Data Dense theme",
       "file": "firmware/bf5rh-fork1-dense.BF",
-      "size": 56936,
-      "sha256": "5cf38268cacf777462013b6d290ff0a174f23c996b2c7b8cec42bba749fede60",
+      "size": 56928,
+      "sha256": "77b66644b7aead636bd3c309ca73db93ea5d45bc1c1c0632d0862f1e41402c52",
       "notes": "bf-5rh + slimmed core with the Data Dense standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
       "preview": "themeimg/fork1-dense.png"
     },
@@ -31,8 +31,8 @@
       "id": "bf5rh-fork1-minimal",
       "name": "Fork 1 \u2014 Minimal Dark theme",
       "file": "firmware/bf5rh-fork1-minimal.BF",
-      "size": 54300,
-      "sha256": "bed070996edf47138e495d00b586dd2efbc096b4d2f4568c43ab61dc77b60f54",
+      "size": 54296,
+      "sha256": "f6840cd31eeac7e2dc5fdf6e62f80f0d68209f56b2972e373941eca207e38345",
       "notes": "bf-5rh + slimmed core with the Minimal Dark standby theme compiled in. Switching themes = flash a different Fork 1 variant (Upgrade flow). All catalog apps compatible (build hash unchanged).",
       "preview": "themeimg/fork1-minimal.png"
     },

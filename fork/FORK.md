@@ -35,14 +35,15 @@ a theme, it uploads the new theme and deletes the old").
 - Upstream: bf-5rh firmware, commit **e52b236** (the tree our flashed
   M0 build came from; raw 57,492 B).
 - Fork tree (build box): `~/ar5rm-firmware/bf5rh-fork`, commits
-  **dae59c4** (first design) → **7d2de0d** (this rework) on e52b236.
+  **dae59c4** (first design) → **7d2de0d** (this rework) →
+  **90a452d** (v1.0.1 fixes) on e52b236.
   The pristine upstream tree is untouched.
 - Recover from this repo alone:
 
   ```sh
   git clone <upstream bf-5rh> && cd bf-5rh-firmware-open
   git checkout e52b236
-  git apply fork/bf5rh-fork.patch   # 73,051 B
+  git apply fork/bf5rh-fork.patch   # 73,502 B
   cargo build --release                                   # APX Pro
   cargo build --release --no-default-features --features theme-dense
   ```
@@ -164,17 +165,30 @@ the Clean Modern palette as shipped is a saturated royal blue
 where the mockup is a muted slate, and the `·` separators written
 in `standby.rs` (5 places) render as `?` — the embedded-graphics
 ASCII fonts have no middle-dot glyph, so the radio will show the
-same `?`. Both are cosmetic; neither is fixed here (any fix is a
-firmware change and bumps the version).
+same `?`. **Both findings are CLOSED in v1.0.1** (fork commit
+90a452d, Preston approved both fixes 2026-11-24): the five
+middle dots are now ASCII `|` separators (`GMRS 20 | MAIN`,
+`WATCH B | DW ON | PS OFF` — a scan of every string literal in
+`src/` confirms no non-ASCII literals remain), and the
+Clean Modern palette was retuned to the mockup's sampled colours
+(dominant panel (24,48,156) → (24,44,57); bg (8,24,82) →
+(16,24,33); accent and the semantic colours unchanged). All
+four variants were re-rendered with the core-UI simulator from
+the fixed sources: no `?` in any frame, and the Clean frame's
+dominant colours match the mockup's samples.
 
 ## Variant sizes (raw .bin; limit 61,440 B)
 
 | Variant | Raw size | Margin | .BF size | .BF SHA-256 |
 |---|---:|---:|---:|---|
-| Fork 1 — APX Pro | 57,092 | 4,348 | 57,108 | `3edf67505ce2c6d44202f715266755c1526614626101462f2f125158d87a63ad` |
-| Fork 1 — Clean Modern | 57,160 | 4,280 | 57,176 | `cf329090449b556bb836b4e1de9bc8b1390817116317711a49e991f21e73f13a` |
-| Fork 1 — Data Dense | 56,920 | 4,520 | 56,936 | `5cf38268cacf777462013b6d290ff0a174f23c996b2c7b8cec42bba749fede60` |
-| Fork 1 — Minimal Dark | 54,284 | 7,156 | 54,300 | `bed070996edf47138e495d00b586dd2efbc096b4d2f4568c43ab61dc77b60f54` |
+| Fork 1 — APX Pro | 57,088 | 4,352 | 57,104 | `bc37e263fee49f5fd51d7115d42ee956af8ff14fe94295b0c75201bb35c8ddc4` |
+| Fork 1 — Clean Modern | 57,140 | 4,300 | 57,156 | `666b18b84b87415801d3bb2e1d22fd50accd6d6bd027543dd5ed2fcbae0b92ca` |
+| Fork 1 — Data Dense | 56,912 | 4,528 | 56,928 | `77b66644b7aead636bd3c309ca73db93ea5d45bc1c1c0632d0862f1e41402c52` |
+| Fork 1 — Minimal Dark | 54,280 | 7,160 | 54,296 | `f6840cd31eeac7e2dc5fdf6e62f80f0d68209f56b2972e373941eca207e38345` |
+
+(Sizes/hashes above are the current release, **v1.0.1**. The
+v1.0.0 builds were 4–20 B larger per variant, with the hashes in
+`releases/v1.0.0-notes.md`.)
 
 All four fit with room to spare; no variant needed the feature-cut
 menu. (For reference: slimmed theme-less base 57,096 B; upstream M0
@@ -186,7 +200,7 @@ tool — the re-wrapped M0 reproduces the flashed file's SHA-256
 ## On-radio verification list (for Preston, when a flash is approved)
 
 1. Flash **Fork 1 — Data Dense** (`bf5rh-fork1-dense.BF`, SHA-256
-   `5cf38268…` above) through the flasher's usual gates.
+   `77b66644…` above) through the flasher's usual gates.
 2. Standby should match the core-UI simulator's Data Dense render
    (`tools/simulator/examples/standby-dense.png`): full data sheet
    for the A band (name/SQL, RX freq + offset, TX freq + tone,
@@ -201,7 +215,7 @@ tool — the re-wrapped M0 reproduces the flashed file's SHA-256
 5. Web CPS still connects (Phase 1 functions: settings read,
    band-lock write with read-back).
 6. **Theme swap proof:** flash **Fork 1 — APX Pro**
-   (`bf5rh-fork1-apx.BF`, SHA-256 `3edf6750…`) the same way — standby
+   (`bf5rh-fork1-apx.BF`, SHA-256 `bc37e263…`) the same way — standby
    is now the APX Pro layout. Power-cycle persistence is inherent:
    the theme is compiled in, there is nothing to lose or re-set.
 7. Channels, settings and installed apps should be untouched by the
@@ -209,6 +223,14 @@ tool — the re-wrapped M0 reproduces the flashed file's SHA-256
 
 ## Changelog
 
+- 2026-11-24 — **v1.0.1** (fork commit 90a452d): the two
+  simulator findings closed — `·` separators replaced with `|`
+  (5 places in `standby.rs`; the fonts have no middle-dot glyph),
+  and the Clean Modern palette retuned to the approved mockup's
+  muted slate. All four variants rebuilt, re-rendered in the
+  core-UI simulator (no `?` in any frame), and released.
+  BUILD_HASH unchanged (0xDEC616E9); all 11 catalog apps pass
+  `check_app` against the new builds.
 - 2026-11-24 (evening) — Core-UI simulator renders all four
   variants from the shipping sources (fork commit unchanged,
   7d2de0d); flasher previews swapped from mockups to the true

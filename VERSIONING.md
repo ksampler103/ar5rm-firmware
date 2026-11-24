@@ -39,4 +39,4 @@ flasher page.
 
 ## Current version
 
-**v1.0.0** — Fork 1: slimmed core + theme variants (2026-11-24).
+**v1.0.1** — Fork 1 fixes: `|` separators + muted Clean Modern palette (2026-11-24).
