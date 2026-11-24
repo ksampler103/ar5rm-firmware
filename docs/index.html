@@ -163,6 +163,12 @@
     <h2><span class="stepnum">STEP 1</span> Backup — factory memory <span class="pill" id="backupPill">idle</span></h2>
     <div class="instr">
       Radio state: <strong>stock firmware, powered ON, sitting at its normal main screen.</strong>
+      Follow CHIRP's order — it matters for this radio:
+      <ol>
+        <li><strong>Connect the cable first</strong> — seated hard in the radio and in this computer, and connected in Step 0 above.</li>
+        <li><strong>Then power-cycle the radio off → on</strong> with the cable already attached.</li>
+        <li><strong>Leave it a few seconds at the main screen</strong> before pressing Backup — a freshly booted radio with the cable already attached listens cleanly from power-up.</li>
+      </ol>
       This reads the radio's full factory memory image (33,664 bytes) using the stock CPS protocol
       (<span style="font-family:var(--mono)">PROGRAMBFNORMALU</span>). It is read-only — the tool refuses
       to send anything except the handshake and read frames. <strong>No backup, no flash:</strong> the
@@ -621,12 +627,44 @@ async function doBackup(){
     if(preIdent.length) logMsg("Backup: heard "+preIdent.length+" byte(s) during the pre-ident settle — the radio/cable chattered before the ident was sent (see hex dump). The ident exchange below is still the deciding test.","warn",Uint8Array.from(preIdent));
     else logMsg("Backup: pre-ident listen silent — no bytes heard before the ident (normal). A failure after this point means the radio stayed silent in reply to the ident itself.");
     var ident=asciiBytes("PROGRAMBFNORMALU");
-    logMsg("Backup: sending ident PROGRAMBFNORMALU (radio must be stock, on, at its main screen).","",ident);
-    await writeBytes(ident);
-    var ack=await readExact(1,1500,250);
-    if(!ack) throw new Error("No response from the radio — zero bytes back after the ident, with DTR+RTS asserted and the pre-ident listen "+(preIdent.length?("hearing "+preIdent.length+" byte(s)"):"silent")+". Check the cable is pushed in hard, the radio is ON at its main screen, and you picked the right port. Download the log (with hex dump on) before retrying so silence vs. chatter can be told apart.");
-    logMsg("Backup: ident reply received.", "", ack);
-    if(ack[0]!==0x06) throw new Error("Radio did not acknowledge the ident (expected 0x06, got "+hexByte(ack[0])+"). Is the radio stock and at its main screen?");
+    /* Mirror current CHIRP's ident phase (BF5RM / UV17Pro _do_ident):
+       up to 3 attempts, input buffer cleaned/discarded before each attempt,
+       0.5 s backoff before attempt 2 and 1.0 s before attempt 3, and up to
+       5 s waiting for the 1-byte ACK on each attempt (CHIRP pipe timeout and
+       STIMEOUT are both 5 s). A byte that is not 0x06 is a failed attempt,
+       not a final abort — the sequence continues to the next attempt.
+       Protocol bytes are unchanged: same ident, same 0x06 ACK. */
+    var ack=null;
+    var identBackoffs=[0,500,1000];
+    for(var ia=1; ia<=3; ia++){
+      if(S.abort) throw new Error("Backup aborted by operator during the ident phase. Nothing was written to the radio.");
+      if(identBackoffs[ia-1]>0){
+        logMsg("Backup: waiting "+(identBackoffs[ia-1]/1000).toFixed(1)+" s before ident attempt "+ia+"/3 (CHIRP backoff)…");
+        await sleep(identBackoffs[ia-1]);
+      }
+      var discarded=rxBuf.length;
+      clearRx();
+      if(discarded>0) logMsg("Backup: discarded "+discarded+" pending input byte(s) before ident attempt "+ia+"/3 (buffer clean, as CHIRP does).","warn");
+      var heardBefore=rxHeardTotal;
+      logMsg("Backup: Ident attempt "+ia+"/3 — sending ident PROGRAMBFNORMALU (radio must be stock, on, at its main screen). Waiting up to 5 s for the ACK byte…","",ident);
+      await writeBytes(ident);
+      var attemptAck=await readExact(1,5000,250);
+      var heardThisAttempt=rxHeardTotal-heardBefore;
+      if(!attemptAck){
+        logMsg("Backup: Ident attempt "+ia+"/3 — no response: "+heardThisAttempt+" byte(s) heard in 5 s.","warn");
+        if(ia===3) throw new Error("No response from the radio after 3 ident attempts (5 s wait each) — zero bytes back on the final attempt, with DTR+RTS asserted and the pre-ident listen "+(preIdent.length?("hearing "+preIdent.length+" byte(s)"):"silent")+". Check the cable is pushed in hard, the radio was power-cycled off → on with the cable already attached and left a few seconds at its main screen, and you picked the right port. Download the log (with hex dump on) before retrying so silence vs. chatter can be told apart.");
+        continue;
+      }
+      logMsg("Backup: Ident attempt "+ia+"/3 — heard "+heardThisAttempt+" byte(s); first byte "+hexByte(attemptAck[0])+".","",attemptAck);
+      if(attemptAck[0]!==0x06){
+        logMsg("Backup: Ident attempt "+ia+"/3 — reply byte was not the ACK (expected 0x06, got "+hexByte(attemptAck[0])+"). Counting as a failed attempt"+(ia<3?" — will retry.":"."),"warn",attemptAck);
+        if(ia===3) throw new Error("Radio did not acknowledge the ident after 3 attempts (expected 0x06, last attempt got "+hexByte(attemptAck[0])+"). Is the radio stock and at its main screen?");
+        continue;
+      }
+      ack=attemptAck;
+      break;
+    }
+    if(!ack) throw new Error("Radio did not acknowledge the ident after 3 attempts. Is the radio stock and at its main screen?");
     logMsg("Backup: radio acknowledged (0x06).","ok");
 
     var magics=[
