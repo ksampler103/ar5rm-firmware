@@ -1,0 +1,12 @@
+# rptbook with an injected RPBK block (built by tools/make_rpbk.py).
+# Run with:
+#   --slot-app 2:apps/rptbook.app --slot-data 2:0x6000:rpbk-demo.bin
+# The injected entries must replace the baked directory entirely.
+wait 300
+shot injected-list
+key DOWN
+wait 100
+shot injected-second
+key EXIT
+wait 50
+key EXIT

@@ -1,0 +1,11 @@
+# foxhunt RSSI meter on the standby frequency (quiet in the default
+# model), then with a strong nearby "fox" on the standby frequency
+# (136.100 MHz, Preston's channel 1).
+wait 500
+shot foxhunt-quiet
+tx 136100000 -50 4000
+wait 1500
+shot foxhunt-signal
+key EXIT
+wait 50
+key EXIT

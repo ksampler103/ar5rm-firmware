@@ -1,0 +1,6 @@
+# spectrum analyser: let it sweep the default window for a while.
+wait 3000
+shot spectrum
+key EXIT
+wait 50
+key EXIT

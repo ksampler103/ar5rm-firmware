@@ -1,0 +1,14 @@
+# rptbook with Preston's baked-in directory (from his real backup).
+wait 300
+shot list-top
+key DOWN
+key DOWN
+key DOWN
+wait 100
+shot list-scrolled
+key POUND
+wait 100
+shot detail
+key EXIT
+wait 50
+key EXIT

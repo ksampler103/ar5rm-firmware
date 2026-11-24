@@ -1,0 +1,9 @@
+[package]
+name = "bf5rh-sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bf5rh-abi = { path = "../abi" }
+embedded-graphics = "0.8"
+flate2 = "1"

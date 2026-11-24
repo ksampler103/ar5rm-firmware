@@ -1,0 +1,11 @@
+# settings: group list (segment 0 = menu), then into the first group.
+wait 300
+shot settings-groups
+key MENU
+wait 300
+shot settings-items
+key EXIT
+wait 100
+key EXIT
+wait 50
+key EXIT

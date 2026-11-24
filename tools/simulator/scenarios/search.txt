@@ -1,0 +1,6 @@
+# search (frequency search with subaudio detection).
+wait 1500
+shot search
+key EXIT
+wait 50
+key EXIT

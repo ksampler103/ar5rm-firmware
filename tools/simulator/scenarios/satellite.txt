@@ -1,0 +1,8 @@
+# satellite list segment. NOTE: Preston's settings record has no
+# observer position set and no satellite table was pushed, so the
+# list is expected to be empty — the frame documents that state.
+wait 500
+shot satellite-list
+key EXIT
+wait 50
+key EXIT

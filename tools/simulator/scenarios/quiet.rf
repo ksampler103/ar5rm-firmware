@@ -1,0 +1,2 @@
+# Quiet band: no static signals at all. Scenarios inject their own
+# transmissions with the `tx` step. (actlog uses this.)

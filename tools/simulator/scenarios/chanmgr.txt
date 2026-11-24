@@ -1,0 +1,10 @@
+# chanmgr channel manager over Preston's real channel data.
+wait 300
+shot chanmgr-list
+key DOWN
+key DOWN
+wait 100
+shot chanmgr-scrolled
+key EXIT
+wait 50
+key EXIT

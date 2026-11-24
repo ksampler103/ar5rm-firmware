@@ -1,0 +1,13 @@
+# FM broadcast app: main screen, step up, then seek to the next
+# station in the RF model (98.1 -> 99.5 in the default model).
+wait 500
+shot fm-main
+key UP
+wait 300
+shot fm-stepped
+key UP long
+wait 800
+shot fm-seeked
+key EXIT
+wait 50
+key EXIT

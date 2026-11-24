@@ -1,0 +1,9 @@
+# scanqt quick scanner over the standby receiver.
+wait 300
+shot scanqt-main
+key MENU
+wait 300
+shot scanqt-menu
+key EXIT
+wait 50
+key EXIT

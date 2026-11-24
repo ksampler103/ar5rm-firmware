@@ -1,0 +1,11 @@
+# wxpanel: samples all 7 NOAA channels (~60 ms settle + 3 reads each),
+# then auto-tunes the strongest. Default RF model: 162.475 MHz at
+# -42 dBm (Preston's bench measurement), the rest weaker.
+wait 2500
+shot wx-strongest
+key DOWN
+wait 200
+shot wx-next
+key EXIT
+wait 50
+key EXIT
