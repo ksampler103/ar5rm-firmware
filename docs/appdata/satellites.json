@@ -1,0 +1,116 @@
+{
+  "generated_utc": "2026-11-24T15:50:17.365633+00:00",
+  "tle_source": "CelesTrak GP elements (amateur, stations, weather groups + per-satellite CATNR fallback)",
+  "table_bytes": 5120,
+  "table_flash_addr": "0x18C000",
+  "satellites": [
+    {
+      "name": "ISS",
+      "norad": 25544,
+      "rx_hz": 437800000,
+      "tx_hz": 145990000,
+      "rx_tone": 0,
+      "tx_tone": 670,
+      "tle_epoch_raw": "26327.91294507"
+    },
+    {
+      "name": "ISS-APRS",
+      "norad": 25544,
+      "rx_hz": 145825000,
+      "tx_hz": 145825000,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26327.91294507"
+    },
+    {
+      "name": "SO-50",
+      "norad": 27607,
+      "rx_hz": 436795000,
+      "tx_hz": 145850000,
+      "rx_tone": 0,
+      "tx_tone": 670,
+      "tle_epoch_raw": "26327.54945911"
+    },
+    {
+      "name": "AO-91",
+      "norad": 43017,
+      "rx_hz": 145960000,
+      "tx_hz": 435250000,
+      "rx_tone": 0,
+      "tx_tone": 670,
+      "tle_epoch_raw": "26327.05103132"
+    },
+    {
+      "name": "PO-101",
+      "norad": 43678,
+      "rx_hz": 437500000,
+      "tx_hz": 145900000,
+      "rx_tone": 0,
+      "tx_tone": 1413,
+      "tle_epoch_raw": "26328.19329758"
+    },
+    {
+      "name": "CAS-3H",
+      "norad": 40908,
+      "rx_hz": 437200000,
+      "tx_hz": 144350000,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26328.15546953"
+    },
+    {
+      "name": "RS-44",
+      "norad": 44909,
+      "rx_hz": 435640000,
+      "tx_hz": 145965000,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26327.17973267"
+    },
+    {
+      "name": "AO-7",
+      "norad": 7530,
+      "rx_hz": 145950000,
+      "tx_hz": 432150000,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26327.97065565"
+    },
+    {
+      "name": "FO-29",
+      "norad": 24278,
+      "rx_hz": 435850000,
+      "tx_hz": 145950000,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26326.38187627"
+    },
+    {
+      "name": "NOAA-15",
+      "norad": 25338,
+      "rx_hz": 137620000,
+      "tx_hz": 0,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26328.03408069"
+    },
+    {
+      "name": "NOAA-18",
+      "norad": 28654,
+      "rx_hz": 137912500,
+      "tx_hz": 0,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26328.07083096"
+    },
+    {
+      "name": "NOAA-19",
+      "norad": 33591,
+      "rx_hz": 137100000,
+      "tx_hz": 0,
+      "rx_tone": 0,
+      "tx_tone": 0,
+      "tle_epoch_raw": "26328.02760669"
+    }
+  ]
+}

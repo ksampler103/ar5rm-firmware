@@ -1,0 +1,15 @@
+[package]
+name = "mkrecord"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone host tool: opt out of the firmware tree's workspace.
+[workspace]
+
+[dependencies]
+# Deployed location is <firmware-tree>/tools/mkrecord/ (where push_sat.py
+# looks for it); sgp4mini lives at the firmware-tree root.
+sgp4mini = { path = "../../sgp4mini" }
+
+[profile.release]
+opt-level = 3
